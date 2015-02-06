@@ -437,7 +437,7 @@ igbuio_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	struct msix_entry msix_entry;
 	int err;
 
-	udev = kzalloc(sizeof(struct rte_uio_pci_dev), GFP_KERNEL);
+	udev = kmalloc(sizeof(struct rte_uio_pci_dev), GFP_KERNEL | __GFP_ZERO);
 	if (!udev)
 		return -ENOMEM;
 
