@@ -191,6 +191,14 @@
 #error "APP_DEFAULT_BURST_SIZE_WORKER_WRITE is too big"
 #endif
 
+/* Load balancing logic */
+#ifndef APP_DEFAULT_IO_RX_LB_POS
+#define APP_DEFAULT_IO_RX_LB_POS 29
+#endif
+#if (APP_DEFAULT_IO_RX_LB_POS >= 64)
+#error "APP_DEFAULT_IO_RX_LB_POS is too big"
+#endif
+
 struct app_mbuf_array {
 	struct rte_mbuf *array[APP_MBUF_ARRAY_SIZE];
 	uint32_t n_mbufs;
@@ -289,6 +297,9 @@ struct app_params {
 	uint32_t burst_size_rx_write;
 	uint32_t burst_size_worker_read;
 	uint32_t burst_size_worker_write;
+
+	/* load balancing */
+	uint8_t pos_lb;
 } __rte_cache_aligned;
 
 extern struct app_params app;
@@ -299,6 +310,7 @@ void app_init(void);
 int app_lcore_main_loop(void *arg);
 
 int app_get_nic_rx_queues_per_port(uint8_t port);
+int app_get_nic_tx_queues_per_port(uint8_t port);
 int app_get_lcore_for_nic_rx(uint8_t port, uint8_t queue, uint32_t *lcore_out);
 int app_get_lcore_for_nic_tx(uint8_t port, uint32_t *lcore_out);
 int app_is_socket_used(uint32_t socket);

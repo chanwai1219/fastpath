@@ -221,7 +221,7 @@ app_init_rings(void)
 		unsigned socket_rx, lcore_worker;
 
 		if ((app.lcore_params[lcore].type != e_APP_LCORE_RX) ||
-		    (lp_rx->rx.n_nic_queues == 0)) {
+		    (lp_rx->n_nic_queues == 0)) {
 			continue;
 		}
 
@@ -246,7 +246,7 @@ app_init_rings(void)
 				lcore_worker);
 			ring = rte_ring_create(
 				name,
-				app.ring_rx_size,
+				app.ring_size,
 				socket_rx,
 				RING_F_SP_ENQ | RING_F_SC_DEQ);
 			if (ring == NULL) {
@@ -255,10 +255,10 @@ app_init_rings(void)
 					lcore_worker);
 			}
 
-			lp_rx->rings[lp_rx->rx.n_rings] = ring;
+			lp_rx->rings[lp_rx->n_rings] = ring;
 			lp_rx->n_rings ++;
 
-			lp_worker->rings[lp_worker->n_rings_in] = ring;
+			lp_worker->rings[lp_worker->n_rings] = ring;
 			lp_worker->n_rings ++;
 		}
 	}
@@ -267,11 +267,11 @@ app_init_rings(void)
 		struct app_lcore_params_rx *lp_rx = &app.lcore_params[lcore].rx;
 
 		if ((app.lcore_params[lcore].type != e_APP_LCORE_RX) ||
-		    (lp_rx->rx.n_nic_queues == 0)) {
+		    (lp_rx->n_nic_queues == 0)) {
 			continue;
 		}
 
-		if (lp_rx->rx.n_rings != app_get_lcores_worker()) {
+		if (lp_rx->n_rings != app_get_lcores_worker()) {
 			rte_panic("Algorithmic error (I/O RX rings)\n");
 		}
 	}
@@ -307,7 +307,7 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
 			if ((port_mask & (1 << portid)) == 0)
 				continue;
 			n_rx_queues = app_get_nic_rx_queues_per_port(portid);
-			n_tx_queues = app.nic_tx_port_mask[portid];
+			n_tx_queues = app_get_nic_tx_queues_per_port(portid);
 			if ((n_rx_queues == 0) && (n_tx_queues == 0))
 				continue;
 			memset(&link, 0, sizeof(link));

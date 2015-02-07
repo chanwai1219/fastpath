@@ -497,6 +497,32 @@ app_get_nic_rx_queues_per_port(uint8_t port)
 }
 
 int
+app_get_nic_tx_queues_per_port(uint8_t port)
+{
+	uint32_t lcore;
+    int queue = 0;
+
+    if (port >= APP_MAX_NIC_PORTS) {
+		return -1;
+	}
+
+	for (lcore = 0; lcore < APP_MAX_LCORES; lcore ++) {
+		struct app_lcore_params_worker *lp = &app.lcore_params[lcore].worker;
+
+		if (app.lcore_params[lcore].type != e_APP_LCORE_WORKER &&
+            app.lcore_params[lcore].type != e_APP_LCORE_RX_WORKER) {
+			continue;
+		}
+
+        if (lp->tx_queue_id[port] > queue) {
+            queue = lp->tx_queue_id[port];
+        }
+	}
+
+	return -1;
+}
+
+int
 app_get_lcore_for_nic_rx(uint8_t port, uint8_t queue, uint32_t *lcore_out)
 {
 	uint32_t lcore;
