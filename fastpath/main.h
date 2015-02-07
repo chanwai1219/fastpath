@@ -55,22 +55,15 @@
 #define APP_MAX_TX_QUEUES_PER_NIC_PORT 128
 #endif
 
-#ifndef APP_MAX_IO_LCORES
-#define APP_MAX_IO_LCORES 16
+#ifndef APP_MAX_RX_LCORES
+#define APP_MAX_RX_LCORES 16
 #endif
-#if (APP_MAX_IO_LCORES > APP_MAX_LCORES)
-#error "APP_MAX_IO_LCORES is too big"
-#endif
-
-#ifndef APP_MAX_NIC_RX_QUEUES_PER_IO_LCORE
-#define APP_MAX_NIC_RX_QUEUES_PER_IO_LCORE 16
+#if (APP_MAX_RX_LCORES > APP_MAX_LCORES)
+#error "APP_MAX_RX_LCORES is too big"
 #endif
 
-#ifndef APP_MAX_NIC_TX_PORTS_PER_IO_LCORE
-#define APP_MAX_NIC_TX_PORTS_PER_IO_LCORE 16
-#endif
-#if (APP_MAX_NIC_TX_PORTS_PER_IO_LCORE > APP_MAX_NIC_PORTS)
-#error "APP_MAX_NIC_TX_PORTS_PER_IO_LCORE too big"
+#ifndef APP_MAX_NIC_RX_QUEUES_PER_LCORE
+#define APP_MAX_NIC_RX_QUEUES_PER_LCORE 16
 #endif
 
 #ifndef APP_MAX_WORKER_LCORES
@@ -161,12 +154,8 @@
 #endif
 
 /* Software Rings */
-#ifndef APP_DEFAULT_RING_RX_SIZE
-#define APP_DEFAULT_RING_RX_SIZE 1024
-#endif
-
-#ifndef APP_DEFAULT_RING_TX_SIZE
-#define APP_DEFAULT_RING_TX_SIZE 1024
+#ifndef APP_DEFAULT_RING_SIZE
+#define APP_DEFAULT_RING_SIZE 1024
 #endif
 
 /* Bursts */
@@ -174,32 +163,18 @@
 #define APP_MBUF_ARRAY_SIZE   512
 #endif
 
-#ifndef APP_DEFAULT_BURST_SIZE_IO_RX_READ
-#define APP_DEFAULT_BURST_SIZE_IO_RX_READ  144
+#ifndef APP_DEFAULT_BURST_SIZE_RX_READ
+#define APP_DEFAULT_BURST_SIZE_RX_READ  144
 #endif
-#if (APP_DEFAULT_BURST_SIZE_IO_RX_READ > APP_MBUF_ARRAY_SIZE)
-#error "APP_DEFAULT_BURST_SIZE_IO_RX_READ is too big"
-#endif
-
-#ifndef APP_DEFAULT_BURST_SIZE_IO_RX_WRITE
-#define APP_DEFAULT_BURST_SIZE_IO_RX_WRITE  144
-#endif
-#if (APP_DEFAULT_BURST_SIZE_IO_RX_WRITE > APP_MBUF_ARRAY_SIZE)
-#error "APP_DEFAULT_BURST_SIZE_IO_RX_WRITE is too big"
+#if (APP_DEFAULT_BURST_SIZE_RX_READ > APP_MBUF_ARRAY_SIZE)
+#error "APP_DEFAULT_BURST_SIZE_RX_READ is too big"
 #endif
 
-#ifndef APP_DEFAULT_BURST_SIZE_IO_TX_READ
-#define APP_DEFAULT_BURST_SIZE_IO_TX_READ  144
+#ifndef APP_DEFAULT_BURST_SIZE_RX_WRITE
+#define APP_DEFAULT_BURST_SIZE_RX_WRITE  144
 #endif
-#if (APP_DEFAULT_BURST_SIZE_IO_TX_READ > APP_MBUF_ARRAY_SIZE)
-#error "APP_DEFAULT_BURST_SIZE_IO_TX_READ is too big"
-#endif
-
-#ifndef APP_DEFAULT_BURST_SIZE_IO_TX_WRITE
-#define APP_DEFAULT_BURST_SIZE_IO_TX_WRITE  144
-#endif
-#if (APP_DEFAULT_BURST_SIZE_IO_TX_WRITE > APP_MBUF_ARRAY_SIZE)
-#error "APP_DEFAULT_BURST_SIZE_IO_TX_WRITE is too big"
+#if (APP_DEFAULT_BURST_SIZE_RX_WRITE > APP_MBUF_ARRAY_SIZE)
+#error "APP_DEFAULT_BURST_SIZE_RX_WRITE is too big"
 #endif
 
 #ifndef APP_DEFAULT_BURST_SIZE_WORKER_READ
@@ -214,14 +189,6 @@
 #endif
 #if (APP_DEFAULT_BURST_SIZE_WORKER_WRITE > APP_MBUF_ARRAY_SIZE)
 #error "APP_DEFAULT_BURST_SIZE_WORKER_WRITE is too big"
-#endif
-
-/* Load balancing logic */
-#ifndef APP_DEFAULT_IO_RX_LB_POS
-#define APP_DEFAULT_IO_RX_LB_POS 29
-#endif
-#if (APP_DEFAULT_IO_RX_LB_POS >= 64)
-#error "APP_DEFAULT_IO_RX_LB_POS is too big"
 #endif
 
 struct app_mbuf_array {
@@ -241,7 +208,7 @@ struct app_lcore_params_rx {
 	struct {
 		uint8_t port;
 		uint8_t queue;
-	} nic_queues[APP_MAX_NIC_RX_QUEUES_PER_IO_LCORE];
+	} nic_queues[APP_MAX_NIC_RX_QUEUES_PER_LCORE];
 	uint32_t n_nic_queues;
 
 	/* Rings */
@@ -254,8 +221,8 @@ struct app_lcore_params_rx {
 	uint8_t mbuf_out_flush[APP_MAX_WORKER_LCORES];
 
 	/* Stats */
-	uint32_t nic_queues_count[APP_MAX_NIC_RX_QUEUES_PER_IO_LCORE];
-	uint32_t nic_queues_iters[APP_MAX_NIC_RX_QUEUES_PER_IO_LCORE];
+	uint32_t nic_queues_count[APP_MAX_NIC_RX_QUEUES_PER_LCORE];
+	uint32_t nic_queues_iters[APP_MAX_NIC_RX_QUEUES_PER_LCORE];
 	uint32_t rings_count[APP_MAX_WORKER_LCORES];
 	uint32_t rings_iters[APP_MAX_WORKER_LCORES];
 };
@@ -265,7 +232,7 @@ struct app_lcore_params_worker {
     uint16_t tx_queue_id[APP_MAX_NIC_PORTS];
     
 	/* Rings */
-	struct rte_ring *rings[APP_MAX_IO_LCORES];
+	struct rte_ring *rings[APP_MAX_RX_LCORES];
 	uint32_t n_rings;
 
 	/* LPM table */
@@ -278,8 +245,8 @@ struct app_lcore_params_worker {
 	uint8_t mbuf_out_flush[APP_MAX_NIC_PORTS];
 
 	/* Stats */
-	uint32_t rings_in_count[APP_MAX_IO_LCORES];
-	uint32_t rings_in_iters[APP_MAX_IO_LCORES];
+	uint32_t rings_in_count[APP_MAX_RX_LCORES];
+	uint32_t rings_in_iters[APP_MAX_RX_LCORES];
 	uint32_t rings_out_count[APP_MAX_NIC_PORTS];
 	uint32_t rings_out_iters[APP_MAX_NIC_PORTS];
 };
