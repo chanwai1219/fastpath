@@ -255,11 +255,11 @@ app_init_rings(void)
 					lcore_worker);
 			}
 
-			lp_rx->rx.rings[lp_rx->rx.n_rings] = ring;
-			lp_rx->rx.n_rings ++;
+			lp_rx->rings[lp_rx->rx.n_rings] = ring;
+			lp_rx->n_rings ++;
 
-			lp_worker->rings_in[lp_worker->n_rings_in] = ring;
-			lp_worker->n_rings_in ++;
+			lp_worker->rings[lp_worker->n_rings_in] = ring;
+			lp_worker->n_rings ++;
 		}
 	}
 
@@ -283,7 +283,7 @@ app_init_rings(void)
 			continue;
 		}
 
-		if (lp_worker->n_rings_in != app_get_lcores_rx()) {
+		if (lp_worker->n_rings != app_get_lcores_rx()) {
 			rte_panic("Algorithmic error (worker input rings)\n");
 		}
 	}

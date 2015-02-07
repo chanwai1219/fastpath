@@ -285,10 +285,8 @@ struct app_lcore_params_worker {
 };
 
 struct app_lcore_params {
-	union {
-		struct app_lcore_params_rx rx;
-		struct app_lcore_params_worker worker;
-	};
+	struct app_lcore_params_rx rx;
+	struct app_lcore_params_worker worker;
 	enum app_lcore_type type;
 	struct rte_mempool *pool;
 } __rte_cache_aligned;
@@ -317,19 +315,13 @@ struct app_params {
 	/* rings */
 	uint32_t nic_rx_ring_size;
 	uint32_t nic_tx_ring_size;
-	uint32_t ring_rx_size;
-	uint32_t ring_tx_size;
+	uint32_t ring_size;
 
 	/* burst size */
-	uint32_t burst_size_io_rx_read;
-	uint32_t burst_size_io_rx_write;
-	uint32_t burst_size_io_tx_read;
-	uint32_t burst_size_io_tx_write;
+	uint32_t burst_size_rx_read;
+	uint32_t burst_size_rx_write;
 	uint32_t burst_size_worker_read;
 	uint32_t burst_size_worker_write;
-
-	/* load balancing */
-	uint8_t pos_lb;
 } __rte_cache_aligned;
 
 extern struct app_params app;
