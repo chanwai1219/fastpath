@@ -35,66 +35,66 @@
 #define _MAIN_H_
 
 /* Logical cores */
-#ifndef APP_MAX_SOCKETS
-#define APP_MAX_SOCKETS 2
+#ifndef FASTPATH_MAX_SOCKETS
+#define FASTPATH_MAX_SOCKETS 2
 #endif
 
-#ifndef APP_MAX_LCORES
-#define APP_MAX_LCORES       RTE_MAX_LCORE
+#ifndef FASTPATH_MAX_LCORES
+#define FASTPATH_MAX_LCORES       RTE_MAX_LCORE
 #endif
 
-#ifndef APP_MAX_NIC_PORTS
-#define APP_MAX_NIC_PORTS    RTE_MAX_ETHPORTS
+#ifndef FASTPATH_MAX_NIC_PORTS
+#define FASTPATH_MAX_NIC_PORTS    RTE_MAX_ETHPORTS
 #endif
 
-#ifndef APP_MAX_RX_QUEUES_PER_NIC_PORT
-#define APP_MAX_RX_QUEUES_PER_NIC_PORT 128
+#ifndef FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT
+#define FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT 128
 #endif
 
-#ifndef APP_MAX_TX_QUEUES_PER_NIC_PORT
-#define APP_MAX_TX_QUEUES_PER_NIC_PORT 128
+#ifndef FASTPATH_MAX_TX_QUEUES_PER_NIC_PORT
+#define FASTPATH_MAX_TX_QUEUES_PER_NIC_PORT 128
 #endif
 
-#ifndef APP_MAX_RX_LCORES
-#define APP_MAX_RX_LCORES 16
+#ifndef FASTPATH_MAX_RX_LCORES
+#define FASTPATH_MAX_RX_LCORES 16
 #endif
-#if (APP_MAX_RX_LCORES > APP_MAX_LCORES)
-#error "APP_MAX_RX_LCORES is too big"
-#endif
-
-#ifndef APP_MAX_NIC_RX_QUEUES_PER_LCORE
-#define APP_MAX_NIC_RX_QUEUES_PER_LCORE 16
+#if (FASTPATH_MAX_RX_LCORES > FASTPATH_MAX_LCORES)
+#error "FASTPATH_MAX_RX_LCORES is too big"
 #endif
 
-#ifndef APP_MAX_WORKER_LCORES
-#define APP_MAX_WORKER_LCORES 16
+#ifndef FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE
+#define FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE 16
 #endif
-#if (APP_MAX_WORKER_LCORES > APP_MAX_LCORES)
-#error "APP_MAX_WORKER_LCORES is too big"
+
+#ifndef FASTPATH_MAX_WORKER_LCORES
+#define FASTPATH_MAX_WORKER_LCORES 16
+#endif
+#if (FASTPATH_MAX_WORKER_LCORES > FASTPATH_MAX_LCORES)
+#error "FASTPATH_MAX_WORKER_LCORES is too big"
 #endif
 
 
 /* Mempools */
-#ifndef APP_DEFAULT_MBUF_SIZE
-#define APP_DEFAULT_MBUF_SIZE (2048 + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
+#ifndef FASTPATH_DEFAULT_MBUF_SIZE
+#define FASTPATH_DEFAULT_MBUF_SIZE (2048 + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
 #endif
 
-#ifndef APP_DEFAULT_MEMPOOL_BUFFERS
-#define APP_DEFAULT_MEMPOOL_BUFFERS   8192 * 4
+#ifndef FASTPATH_DEFAULT_MEMPOOL_BUFFERS
+#define FASTPATH_DEFAULT_MEMPOOL_BUFFERS   8192 * 4
 #endif
 
-#ifndef APP_DEFAULT_MEMPOOL_CACHE_SIZE
-#define APP_DEFAULT_MEMPOOL_CACHE_SIZE  256
+#ifndef FASTPATH_DEFAULT_MEMPOOL_CACHE_SIZE
+#define FASTPATH_DEFAULT_MEMPOOL_CACHE_SIZE  256
 #endif
 
 /* LPM Tables */
-#ifndef APP_MAX_LPM_RULES
-#define APP_MAX_LPM_RULES 1024
+#ifndef FASTPATH_MAX_LPM_RULES
+#define FASTPATH_MAX_LPM_RULES 1024
 #endif
 
 /* NIC RX */
-#ifndef APP_DEFAULT_NIC_RX_RING_SIZE
-#define APP_DEFAULT_NIC_RX_RING_SIZE 1024
+#ifndef FASTPATH_DEFAULT_NIC_RX_RING_SIZE
+#define FASTPATH_DEFAULT_NIC_RX_RING_SIZE 1024
 #endif
 
 /*
@@ -103,29 +103,29 @@
  * controller's datasheet and supporting DPDK documentation for guidance
  * on how these parameters should be set.
  */
-#ifndef APP_DEFAULT_NIC_RX_PTHRESH
-#define APP_DEFAULT_NIC_RX_PTHRESH  8
+#ifndef FASTPATH_DEFAULT_NIC_RX_PTHRESH
+#define FASTPATH_DEFAULT_NIC_RX_PTHRESH  8
 #endif
 
-#ifndef APP_DEFAULT_NIC_RX_HTHRESH
-#define APP_DEFAULT_NIC_RX_HTHRESH  8
+#ifndef FASTPATH_DEFAULT_NIC_RX_HTHRESH
+#define FASTPATH_DEFAULT_NIC_RX_HTHRESH  8
 #endif
 
-#ifndef APP_DEFAULT_NIC_RX_WTHRESH
-#define APP_DEFAULT_NIC_RX_WTHRESH  4
+#ifndef FASTPATH_DEFAULT_NIC_RX_WTHRESH
+#define FASTPATH_DEFAULT_NIC_RX_WTHRESH  4
 #endif
 
-#ifndef APP_DEFAULT_NIC_RX_FREE_THRESH
-#define APP_DEFAULT_NIC_RX_FREE_THRESH  64
+#ifndef FASTPATH_DEFAULT_NIC_RX_FREE_THRESH
+#define FASTPATH_DEFAULT_NIC_RX_FREE_THRESH  64
 #endif
 
-#ifndef APP_DEFAULT_NIC_RX_DROP_EN
-#define APP_DEFAULT_NIC_RX_DROP_EN 0
+#ifndef FASTPATH_DEFAULT_NIC_RX_DROP_EN
+#define FASTPATH_DEFAULT_NIC_RX_DROP_EN 0
 #endif
 
 /* NIC TX */
-#ifndef APP_DEFAULT_NIC_TX_RING_SIZE
-#define APP_DEFAULT_NIC_TX_RING_SIZE 1024
+#ifndef FASTPATH_DEFAULT_NIC_TX_RING_SIZE
+#define FASTPATH_DEFAULT_NIC_TX_RING_SIZE 1024
 #endif
 
 /*
@@ -133,114 +133,114 @@
  * Controller and the DPDK ixgbe PMD. Consider using other values for other
  * network controllers and/or network drivers.
  */
-#ifndef APP_DEFAULT_NIC_TX_PTHRESH
-#define APP_DEFAULT_NIC_TX_PTHRESH  36
+#ifndef FASTPATH_DEFAULT_NIC_TX_PTHRESH
+#define FASTPATH_DEFAULT_NIC_TX_PTHRESH  36
 #endif
 
-#ifndef APP_DEFAULT_NIC_TX_HTHRESH
-#define APP_DEFAULT_NIC_TX_HTHRESH  0
+#ifndef FASTPATH_DEFAULT_NIC_TX_HTHRESH
+#define FASTPATH_DEFAULT_NIC_TX_HTHRESH  0
 #endif
 
-#ifndef APP_DEFAULT_NIC_TX_WTHRESH
-#define APP_DEFAULT_NIC_TX_WTHRESH  0
+#ifndef FASTPATH_DEFAULT_NIC_TX_WTHRESH
+#define FASTPATH_DEFAULT_NIC_TX_WTHRESH  0
 #endif
 
-#ifndef APP_DEFAULT_NIC_TX_FREE_THRESH
-#define APP_DEFAULT_NIC_TX_FREE_THRESH  0
+#ifndef FASTPATH_DEFAULT_NIC_TX_FREE_THRESH
+#define FASTPATH_DEFAULT_NIC_TX_FREE_THRESH  0
 #endif
 
-#ifndef APP_DEFAULT_NIC_TX_RS_THRESH
-#define APP_DEFAULT_NIC_TX_RS_THRESH  0
+#ifndef FASTPATH_DEFAULT_NIC_TX_RS_THRESH
+#define FASTPATH_DEFAULT_NIC_TX_RS_THRESH  0
 #endif
 
 /* Software Rings */
-#ifndef APP_DEFAULT_RING_SIZE
-#define APP_DEFAULT_RING_SIZE 1024
+#ifndef FASTPATH_DEFAULT_RING_SIZE
+#define FASTPATH_DEFAULT_RING_SIZE 1024
 #endif
 
 /* Bursts */
-#ifndef APP_MBUF_ARRAY_SIZE
-#define APP_MBUF_ARRAY_SIZE   512
+#ifndef FASTPATH_MBUF_ARRAY_SIZE
+#define FASTPATH_MBUF_ARRAY_SIZE   512
 #endif
 
-#ifndef APP_DEFAULT_BURST_SIZE_RX_READ
-#define APP_DEFAULT_BURST_SIZE_RX_READ  144
+#ifndef FASTPATH_DEFAULT_BURST_SIZE_RX_READ
+#define FASTPATH_DEFAULT_BURST_SIZE_RX_READ  144
 #endif
-#if (APP_DEFAULT_BURST_SIZE_RX_READ > APP_MBUF_ARRAY_SIZE)
-#error "APP_DEFAULT_BURST_SIZE_RX_READ is too big"
-#endif
-
-#ifndef APP_DEFAULT_BURST_SIZE_RX_WRITE
-#define APP_DEFAULT_BURST_SIZE_RX_WRITE  144
-#endif
-#if (APP_DEFAULT_BURST_SIZE_RX_WRITE > APP_MBUF_ARRAY_SIZE)
-#error "APP_DEFAULT_BURST_SIZE_RX_WRITE is too big"
+#if (FASTPATH_DEFAULT_BURST_SIZE_RX_READ > FASTPATH_MBUF_ARRAY_SIZE)
+#error "FASTPATH_DEFAULT_BURST_SIZE_RX_READ is too big"
 #endif
 
-#ifndef APP_DEFAULT_BURST_SIZE_WORKER_READ
-#define APP_DEFAULT_BURST_SIZE_WORKER_READ  144
+#ifndef FASTPATH_DEFAULT_BURST_SIZE_RX_WRITE
+#define FASTPATH_DEFAULT_BURST_SIZE_RX_WRITE  144
 #endif
-#if ((2 * APP_DEFAULT_BURST_SIZE_WORKER_READ) > APP_MBUF_ARRAY_SIZE)
-#error "APP_DEFAULT_BURST_SIZE_WORKER_READ is too big"
+#if (FASTPATH_DEFAULT_BURST_SIZE_RX_WRITE > FASTPATH_MBUF_ARRAY_SIZE)
+#error "FASTPATH_DEFAULT_BURST_SIZE_RX_WRITE is too big"
 #endif
 
-#ifndef APP_DEFAULT_BURST_SIZE_WORKER_WRITE
-#define APP_DEFAULT_BURST_SIZE_WORKER_WRITE  144
+#ifndef FASTPATH_DEFAULT_BURST_SIZE_WORKER_READ
+#define FASTPATH_DEFAULT_BURST_SIZE_WORKER_READ  144
 #endif
-#if (APP_DEFAULT_BURST_SIZE_WORKER_WRITE > APP_MBUF_ARRAY_SIZE)
-#error "APP_DEFAULT_BURST_SIZE_WORKER_WRITE is too big"
+#if ((2 * FASTPATH_DEFAULT_BURST_SIZE_WORKER_READ) > FASTPATH_MBUF_ARRAY_SIZE)
+#error "FASTPATH_DEFAULT_BURST_SIZE_WORKER_READ is too big"
+#endif
+
+#ifndef FASTPATH_DEFAULT_BURST_SIZE_WORKER_WRITE
+#define FASTPATH_DEFAULT_BURST_SIZE_WORKER_WRITE  144
+#endif
+#if (FASTPATH_DEFAULT_BURST_SIZE_WORKER_WRITE > FASTPATH_MBUF_ARRAY_SIZE)
+#error "FASTPATH_DEFAULT_BURST_SIZE_WORKER_WRITE is too big"
 #endif
 
 /* Load balancing logic */
-#ifndef APP_DEFAULT_IO_RX_LB_POS
-#define APP_DEFAULT_IO_RX_LB_POS 29
+#ifndef FASTPATH_DEFAULT_IO_RX_LB_POS
+#define FASTPATH_DEFAULT_IO_RX_LB_POS 29
 #endif
-#if (APP_DEFAULT_IO_RX_LB_POS >= 64)
-#error "APP_DEFAULT_IO_RX_LB_POS is too big"
+#if (FASTPATH_DEFAULT_IO_RX_LB_POS >= 64)
+#error "FASTPATH_DEFAULT_IO_RX_LB_POS is too big"
 #endif
 
-struct app_mbuf_array {
-	struct rte_mbuf *array[APP_MBUF_ARRAY_SIZE];
+struct mbuf_array {
+	struct rte_mbuf *array[FASTPATH_MBUF_ARRAY_SIZE];
 	uint32_t n_mbufs;
 };
 
-enum app_lcore_type {
-	e_APP_LCORE_DISABLED = 0,
-	e_APP_LCORE_RX,
-	e_APP_LCORE_WORKER,
-	e_APP_LCORE_RX_WORKER
+enum fastpath_lcore_type {
+	e_FASTPATH_LCORE_DISABLED = 0,
+	e_FASTPATH_LCORE_RX,
+	e_FASTPATH_LCORE_WORKER,
+	e_FASTPATH_LCORE_RX_WORKER
 };
 
-struct app_lcore_params_rx {
+struct fastpath_params_rx {
 	/* NIC */
 	struct {
 		uint8_t port;
 		uint8_t queue;
-	} nic_queues[APP_MAX_NIC_RX_QUEUES_PER_LCORE];
+	} nic_queues[FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE];
 	uint32_t n_nic_queues;
 
 	/* Rings */
-	struct rte_ring *rings[APP_MAX_WORKER_LCORES];
+	struct rte_ring *rings[FASTPATH_MAX_WORKER_LCORES];
 	uint32_t n_rings;
 
 	/* Internal buffers */
-	struct app_mbuf_array mbuf_in;
-	struct app_mbuf_array mbuf_out[APP_MAX_WORKER_LCORES];
-	uint8_t mbuf_out_flush[APP_MAX_WORKER_LCORES];
+	struct mbuf_array mbuf_in;
+	struct mbuf_array mbuf_out[FASTPATH_MAX_WORKER_LCORES];
+	uint8_t mbuf_out_flush[FASTPATH_MAX_WORKER_LCORES];
 
 	/* Stats */
-	uint32_t nic_queues_count[APP_MAX_NIC_RX_QUEUES_PER_LCORE];
-	uint32_t nic_queues_iters[APP_MAX_NIC_RX_QUEUES_PER_LCORE];
-	uint32_t rings_count[APP_MAX_WORKER_LCORES];
-	uint32_t rings_iters[APP_MAX_WORKER_LCORES];
+	uint32_t nic_queues_count[FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE];
+	uint32_t nic_queues_iters[FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE];
+	uint32_t rings_count[FASTPATH_MAX_WORKER_LCORES];
+	uint32_t rings_iters[FASTPATH_MAX_WORKER_LCORES];
 };
 
-struct app_lcore_params_worker {
+struct fastpath_params_worker {
     /* NIC */
-    uint16_t tx_queue_id[APP_MAX_NIC_PORTS];
+    uint16_t tx_queue_id[FASTPATH_MAX_NIC_PORTS];
     
 	/* Rings */
-	struct rte_ring *rings[APP_MAX_RX_LCORES];
+	struct rte_ring *rings[FASTPATH_MAX_RX_LCORES];
 	uint32_t n_rings;
 
 	/* LPM table */
@@ -248,43 +248,37 @@ struct app_lcore_params_worker {
 	uint32_t worker_id;
 
 	/* Internal buffers */
-	struct app_mbuf_array mbuf_in;
-	struct app_mbuf_array mbuf_out[APP_MAX_NIC_PORTS];
-	uint8_t mbuf_out_flush[APP_MAX_NIC_PORTS];
-
-	/* Stats */
-	uint32_t rings_in_count[APP_MAX_RX_LCORES];
-	uint32_t rings_in_iters[APP_MAX_RX_LCORES];
-	uint32_t rings_out_count[APP_MAX_NIC_PORTS];
-	uint32_t rings_out_iters[APP_MAX_NIC_PORTS];
+	struct mbuf_array mbuf_in;
+	struct mbuf_array mbuf_out[FASTPATH_MAX_NIC_PORTS];
+	uint8_t mbuf_out_flush[FASTPATH_MAX_NIC_PORTS];
 };
 
-struct app_lcore_params {
-	struct app_lcore_params_rx rx;
-	struct app_lcore_params_worker worker;
-	enum app_lcore_type type;
+struct fastpath_lcore_params {
+	struct fastpath_params_rx rx;
+	struct fastpath_params_worker worker;
+	enum fastpath_lcore_type type;
 	struct rte_mempool *pool;
 } __rte_cache_aligned;
 
-struct app_lpm_rule {
+struct fastpath_lpm_rule {
 	uint32_t ip;
 	uint8_t depth;
 	uint8_t if_out;
 };
 
-struct app_params {
+struct fastpath_params {
 	/* lcore */
-	struct app_lcore_params lcore_params[APP_MAX_LCORES];
+	struct fastpath_lcore_params lcore_params[FASTPATH_MAX_LCORES];
 
 	/* NIC */
-	uint8_t nic_rx_queue_mask[APP_MAX_NIC_PORTS][APP_MAX_RX_QUEUES_PER_NIC_PORT];
+	uint8_t nic_rx_queue_mask[FASTPATH_MAX_NIC_PORTS][FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT];
 
 	/* mbuf pools */
-	struct rte_mempool *pools[APP_MAX_SOCKETS];
+	struct rte_mempool *pools[FASTPATH_MAX_SOCKETS];
 
 	/* LPM tables */
-	struct rte_lpm *lpm_tables[APP_MAX_SOCKETS];
-	struct app_lpm_rule lpm_rules[APP_MAX_LPM_RULES];
+	struct rte_lpm *lpm_tables[FASTPATH_MAX_SOCKETS];
+	struct fastpath_lpm_rule lpm_rules[FASTPATH_MAX_LPM_RULES];
 	uint32_t n_lpm_rules;
 
 	/* rings */
@@ -302,20 +296,20 @@ struct app_params {
 	uint8_t pos_lb;
 } __rte_cache_aligned;
 
-extern struct app_params app;
+extern struct fastpath_params app;
 
-int app_parse_args(int argc, char **argv);
-void app_print_usage(void);
-void app_init(void);
-int app_lcore_main_loop(void *arg);
+int fastpath_parse_args(int argc, char **argv);
+void fastpath_print_usage(void);
+void fastpath_init(void);
+int fastpath_main_loop(void *arg);
 
-int app_get_nic_rx_queues_per_port(uint8_t port);
-int app_get_nic_tx_queues_per_port(uint8_t port);
-int app_get_lcore_for_nic_rx(uint8_t port, uint8_t queue, uint32_t *lcore_out);
-int app_get_lcore_for_nic_tx(uint8_t port, uint32_t *lcore_out);
-int app_is_socket_used(uint32_t socket);
-uint32_t app_get_lcores_rx(void);
-uint32_t app_get_lcores_worker(void);
-void app_print_params(void);
+int fastpath_get_nic_rx_queues_per_port(uint8_t port);
+int fastpath_get_nic_tx_queues_per_port(uint8_t port);
+int fastpath_get_lcore_for_nic_rx(uint8_t port, uint8_t queue, uint32_t *lcore_out);
+int fastpath_get_lcore_for_nic_tx(uint8_t port, uint32_t *lcore_out);
+int fastpath_is_socket_used(uint32_t socket);
+uint32_t fastpath_get_lcores_rx(void);
+uint32_t fastpath_get_lcores_worker(void);
+void fastpath_print_params(void);
 
 #endif /* _MAIN_H_ */

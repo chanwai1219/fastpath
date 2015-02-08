@@ -74,7 +74,7 @@
 
 #include "main.h"
 
-struct app_params app;
+struct fastpath_params app;
 
 static const char usage[] =
 "                                                                               \n"
@@ -100,28 +100,32 @@ static const char usage[] =
 "               is %u)                                                          \n"
 "           C = Worker lcore read burst size from input SW rings (default value \n"
 "               is %u)                                                          \n"
-"           D = I/O TX lcore write burst size to NIC TX (default value is %u)   \n";
+"           D = I/O TX lcore write burst size to NIC TX (default value is %u)   \n"
+"    --pos-lb POS : Position of the 1-byte field within the input packet used by\n"
+"           the I/O RX lcores to identify the worker lcore for the current      \n"
+"           packet (default value is %u)                                        \n";
 
 void
-app_print_usage(void)
+fastpath_print_usage(void)
 {
 	printf(usage,
-		APP_DEFAULT_NIC_RX_RING_SIZE,
-		APP_DEFAULT_RING_SIZE,
-		APP_DEFAULT_NIC_TX_RING_SIZE,
-		APP_DEFAULT_BURST_SIZE_RX_READ,
-		APP_DEFAULT_BURST_SIZE_RX_WRITE,
-		APP_DEFAULT_BURST_SIZE_WORKER_READ,
-		APP_DEFAULT_BURST_SIZE_WORKER_WRITE
+		FASTPATH_DEFAULT_NIC_RX_RING_SIZE,
+		FASTPATH_DEFAULT_RING_SIZE,
+		FASTPATH_DEFAULT_NIC_TX_RING_SIZE,
+		FASTPATH_DEFAULT_BURST_SIZE_RX_READ,
+		FASTPATH_DEFAULT_BURST_SIZE_RX_WRITE,
+		FASTPATH_DEFAULT_BURST_SIZE_WORKER_READ,
+		FASTPATH_DEFAULT_BURST_SIZE_WORKER_WRITE,
+		FASTPATH_DEFAULT_IO_RX_LB_POS
 	);
 }
 
-#ifndef APP_ARG_RX_MAX_CHARS
-#define APP_ARG_RX_MAX_CHARS     4096
+#ifndef FASTPATH_ARG_RX_MAX_CHARS
+#define FASTPATH_ARG_RX_MAX_CHARS     4096
 #endif
 
-#ifndef APP_ARG_RX_MAX_TUPLES
-#define APP_ARG_RX_MAX_TUPLES    128
+#ifndef FASTPATH_ARG_RX_MAX_TUPLES
+#define FASTPATH_ARG_RX_MAX_TUPLES    128
 #endif
 
 static int
@@ -177,13 +181,13 @@ parse_arg_rx(const char *arg)
 	const char *p0 = arg, *p = arg;
 	uint32_t n_tuples;
 
-	if (strnlen(arg, APP_ARG_RX_MAX_CHARS + 1) == APP_ARG_RX_MAX_CHARS + 1) {
+	if (strnlen(arg, FASTPATH_ARG_RX_MAX_CHARS + 1) == FASTPATH_ARG_RX_MAX_CHARS + 1) {
 		return -1;
 	}
 
 	n_tuples = 0;
 	while ((p = strchr(p0,'(')) != NULL) {
-		struct app_lcore_params *lp;
+		struct fastpath_lcore_params *lp;
 		uint32_t port, queue, lcore, i;
 
 		p0 = strchr(p++, ')');
@@ -193,7 +197,7 @@ parse_arg_rx(const char *arg)
 		}
 
 		/* Enable port and queue for later initialization */
-		if ((port >= APP_MAX_NIC_PORTS) || (queue >= APP_MAX_RX_QUEUES_PER_NIC_PORT)) {
+		if ((port >= FASTPATH_MAX_NIC_PORTS) || (queue >= FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT)) {
 			return -3;
 		}
 		if (app.nic_rx_queue_mask[port][queue] != 0) {
@@ -206,14 +210,14 @@ parse_arg_rx(const char *arg)
 			return -5;
 		}
 
-		if (lcore >= APP_MAX_LCORES) {
+		if (lcore >= FASTPATH_MAX_LCORES) {
 			return -6;
 		}
 		lp = &app.lcore_params[lcore];
-		if (lp->type == e_APP_LCORE_WORKER) {
-			lp->type = e_APP_LCORE_RX_WORKER;
+		if (lp->type == e_FASTPATH_LCORE_WORKER) {
+			lp->type = e_FASTPATH_LCORE_RX_WORKER;
 		} else {
-		    lp->type = e_APP_LCORE_RX;
+		    lp->type = e_FASTPATH_LCORE_RX;
 		}
 		for (i = 0; i < lp->rx.n_nic_queues; i ++) {
 			if ((lp->rx.nic_queues[i].port == port) &&
@@ -221,7 +225,7 @@ parse_arg_rx(const char *arg)
 				return -8;
 			}
 		}
-		if (lp->rx.n_nic_queues >= APP_MAX_NIC_RX_QUEUES_PER_LCORE) {
+		if (lp->rx.n_nic_queues >= FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE) {
 			return -9;
 		}
 		lp->rx.nic_queues[lp->rx.n_nic_queues].port = (uint8_t) port;
@@ -229,7 +233,7 @@ parse_arg_rx(const char *arg)
 		lp->rx.n_nic_queues ++;
 
 		n_tuples ++;
-		if (n_tuples > APP_ARG_RX_MAX_TUPLES) {
+		if (n_tuples > FASTPATH_ARG_RX_MAX_TUPLES) {
 			return -10;
 		}
 	}
@@ -241,12 +245,12 @@ parse_arg_rx(const char *arg)
 	return 0;
 }
 
-#ifndef APP_ARG_W_MAX_CHARS
-#define APP_ARG_W_MAX_CHARS     4096
+#ifndef FASTPATH_ARG_W_MAX_CHARS
+#define FASTPATH_ARG_W_MAX_CHARS     4096
 #endif
 
-#ifndef APP_ARG_W_MAX_TUPLES
-#define APP_ARG_W_MAX_TUPLES    APP_MAX_WORKER_LCORES
+#ifndef FASTPATH_ARG_W_MAX_TUPLES
+#define FASTPATH_ARG_W_MAX_TUPLES    FASTPATH_MAX_WORKER_LCORES
 #endif
 
 static int
@@ -255,13 +259,13 @@ parse_arg_w(const char *arg)
 	const char *p = arg;
 	uint32_t n_tuples;
 
-	if (strnlen(arg, APP_ARG_W_MAX_CHARS + 1) == APP_ARG_W_MAX_CHARS + 1) {
+	if (strnlen(arg, FASTPATH_ARG_W_MAX_CHARS + 1) == FASTPATH_ARG_W_MAX_CHARS + 1) {
 		return -1;
 	}
 
 	n_tuples = 0;
 	while (*p != 0) {
-		struct app_lcore_params *lp;
+		struct fastpath_lcore_params *lp;
 		uint32_t lcore;
 
 		errno = 0;
@@ -275,18 +279,18 @@ parse_arg_w(const char *arg)
 			return -3;
 		}
 
-		if (lcore >= APP_MAX_LCORES) {
+		if (lcore >= FASTPATH_MAX_LCORES) {
 			return -4;
 		}
 		lp = &app.lcore_params[lcore];
-		if (lp->type == e_APP_LCORE_RX) {
-			lp->type = e_APP_LCORE_RX_WORKER;
+		if (lp->type == e_FASTPATH_LCORE_RX) {
+			lp->type = e_FASTPATH_LCORE_RX_WORKER;
 		} else {
-		    lp->type = e_APP_LCORE_WORKER;
+		    lp->type = e_FASTPATH_LCORE_WORKER;
 		}
 
 		n_tuples ++;
-		if (n_tuples > APP_ARG_W_MAX_TUPLES) {
+		if (n_tuples > FASTPATH_ARG_W_MAX_TUPLES) {
 			return -6;
 		}
 
@@ -308,18 +312,18 @@ parse_arg_w(const char *arg)
 	return 0;
 }
 
-#ifndef APP_ARG_RSZ_CHARS
-#define APP_ARG_RSZ_CHARS 63
+#ifndef FASTPATH_ARG_RSZ_CHARS
+#define FASTPATH_ARG_RSZ_CHARS 63
 #endif
 
 static int
 parse_arg_rsz(const char *arg)
 {
-	if (strnlen(arg, APP_ARG_RSZ_CHARS + 1) == APP_ARG_RSZ_CHARS + 1) {
+	if (strnlen(arg, FASTPATH_ARG_RSZ_CHARS + 1) == FASTPATH_ARG_RSZ_CHARS + 1) {
 		return -1;
 	}
 
-	if (str_to_unsigned_vals(arg, APP_ARG_RSZ_CHARS, ',', 3,
+	if (str_to_unsigned_vals(arg, FASTPATH_ARG_RSZ_CHARS, ',', 3,
 			&app.nic_rx_ring_size,
 			&app.ring_size,
 			&app.nic_tx_ring_size) !=  3)
@@ -335,15 +339,15 @@ parse_arg_rsz(const char *arg)
 	return 0;
 }
 
-#ifndef APP_ARG_BSZ_CHARS
-#define APP_ARG_BSZ_CHARS 63
+#ifndef FASTPATH_ARG_BSZ_CHARS
+#define FASTPATH_ARG_BSZ_CHARS 63
 #endif
 
 static int
 parse_arg_bsz(const char *arg)
 {
 	const char *p = arg, *p0;
-	if (strnlen(arg, APP_ARG_BSZ_CHARS + 1) == APP_ARG_BSZ_CHARS + 1) {
+	if (strnlen(arg, FASTPATH_ARG_BSZ_CHARS + 1) == FASTPATH_ARG_BSZ_CHARS + 1) {
 		return -1;
 	}
 
@@ -371,19 +375,48 @@ parse_arg_bsz(const char *arg)
 		return -7;
 	}
 
-	if ((app.burst_size_rx_read > APP_MBUF_ARRAY_SIZE) ||
-		(app.burst_size_rx_write > APP_MBUF_ARRAY_SIZE) ||
-		(app.burst_size_worker_read > APP_MBUF_ARRAY_SIZE) ||
-		(app.burst_size_worker_write > APP_MBUF_ARRAY_SIZE)) {
+	if ((app.burst_size_rx_read > FASTPATH_MBUF_ARRAY_SIZE) ||
+		(app.burst_size_rx_write > FASTPATH_MBUF_ARRAY_SIZE) ||
+		(app.burst_size_worker_read > FASTPATH_MBUF_ARRAY_SIZE) ||
+		(app.burst_size_worker_write > FASTPATH_MBUF_ARRAY_SIZE)) {
 		return -8;
 	}
 
 	return 0;
 }
 
+#ifndef FASTPATH_ARG_NUMERICAL_SIZE_CHARS
+#define FASTPATH_ARG_NUMERICAL_SIZE_CHARS 15
+#endif
+
+static int
+parse_arg_pos_lb(const char *arg)
+{
+	uint32_t x;
+	char *endpt;
+
+	if (strnlen(arg, FASTPATH_ARG_NUMERICAL_SIZE_CHARS + 1) == FASTPATH_ARG_NUMERICAL_SIZE_CHARS + 1) {
+		return -1;
+	}
+
+	errno = 0;
+	x = strtoul(arg, &endpt, 10);
+	if (errno != 0 || endpt == arg || *endpt != '\0'){
+		return -2;
+	}
+
+	if (x >= 64) {
+		return -3;
+	}
+
+	app.pos_lb = (uint8_t) x;
+
+	return 0;
+}
+
 /* Parse the argument given in the command line of the application */
 int
-app_parse_args(int argc, char **argv)
+fastpath_parse_args(int argc, char **argv)
 {
 	int opt, ret;
 	char **argvopt;
@@ -394,6 +427,7 @@ app_parse_args(int argc, char **argv)
 		{"w", 1, 0, 0},
 		{"rsz", 1, 0, 0},
 		{"bsz", 1, 0, 0},
+		{"pos-lb", 1, 0, 0},
 		{NULL, 0, 0, 0}
 	};
 	uint32_t arg_w = 0;
@@ -401,6 +435,7 @@ app_parse_args(int argc, char **argv)
 	uint32_t arg_lpm = 0;
 	uint32_t arg_rsz = 0;
 	uint32_t arg_bsz = 0;
+	uint32_t arg_pos_lb = 0;
 
 	argvopt = argv;
 
@@ -442,6 +477,14 @@ app_parse_args(int argc, char **argv)
 					return -1;
 				}
 			}
+			if (!strcmp(lgopts[option_index].name, "pos-lb")) {
+				arg_pos_lb = 1;
+				ret = parse_arg_pos_lb(optarg);
+				if (ret) {
+					printf("Incorrect value for --pos-lb argument (%d)\n", ret);
+					return -1;
+				}
+			}
 			break;
 
 		default:
@@ -457,18 +500,21 @@ app_parse_args(int argc, char **argv)
 
 	/* Assign default values for the optional arguments not provided */
 	if (arg_rsz == 0) {
-		app.nic_rx_ring_size = APP_DEFAULT_NIC_RX_RING_SIZE;
-		app.nic_tx_ring_size = APP_DEFAULT_NIC_TX_RING_SIZE;
-		app.ring_size = APP_DEFAULT_RING_SIZE;
+		app.nic_rx_ring_size = FASTPATH_DEFAULT_NIC_RX_RING_SIZE;
+		app.nic_tx_ring_size = FASTPATH_DEFAULT_NIC_TX_RING_SIZE;
+		app.ring_size = FASTPATH_DEFAULT_RING_SIZE;
 	}
 
 	if (arg_bsz == 0) {
-		app.burst_size_rx_read = APP_DEFAULT_BURST_SIZE_RX_READ;
-		app.burst_size_rx_write = APP_DEFAULT_BURST_SIZE_RX_WRITE;
-		app.burst_size_worker_read = APP_DEFAULT_BURST_SIZE_WORKER_READ;
-		app.burst_size_worker_write = APP_DEFAULT_BURST_SIZE_WORKER_WRITE;
+		app.burst_size_rx_read = FASTPATH_DEFAULT_BURST_SIZE_RX_READ;
+		app.burst_size_rx_write = FASTPATH_DEFAULT_BURST_SIZE_RX_WRITE;
+		app.burst_size_worker_read = FASTPATH_DEFAULT_BURST_SIZE_WORKER_READ;
+		app.burst_size_worker_write = FASTPATH_DEFAULT_BURST_SIZE_WORKER_WRITE;
 	}
 
+	if (arg_pos_lb == 0) {
+		app.pos_lb = FASTPATH_DEFAULT_IO_RX_LB_POS;
+	}
 	if (optind >= 0)
 		argv[optind - 1] = prgname;
 
@@ -478,16 +524,16 @@ app_parse_args(int argc, char **argv)
 }
 
 int
-app_get_nic_rx_queues_per_port(uint8_t port)
+fastpath_get_nic_rx_queues_per_port(uint8_t port)
 {
 	uint32_t i, count;
 
-	if (port >= APP_MAX_NIC_PORTS) {
+	if (port >= FASTPATH_MAX_NIC_PORTS) {
 		return -1;
 	}
 
 	count = 0;
-	for (i = 0; i < APP_MAX_RX_QUEUES_PER_NIC_PORT; i ++) {
+	for (i = 0; i < FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT; i ++) {
 		if (app.nic_rx_queue_mask[port][i] == 1) {
 			count ++;
 		}
@@ -497,20 +543,20 @@ app_get_nic_rx_queues_per_port(uint8_t port)
 }
 
 int
-app_get_nic_tx_queues_per_port(uint8_t port)
+fastpath_get_nic_tx_queues_per_port(uint8_t port)
 {
 	uint32_t lcore;
     int queue = 0;
 
-    if (port >= APP_MAX_NIC_PORTS) {
+    if (port >= FASTPATH_MAX_NIC_PORTS) {
 		return -1;
 	}
 
-	for (lcore = 0; lcore < APP_MAX_LCORES; lcore ++) {
-		struct app_lcore_params_worker *lp = &app.lcore_params[lcore].worker;
+	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
+		struct fastpath_params_worker *lp = &app.lcore_params[lcore].worker;
 
-		if (app.lcore_params[lcore].type != e_APP_LCORE_WORKER &&
-            app.lcore_params[lcore].type != e_APP_LCORE_RX_WORKER) {
+		if (app.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER &&
+            app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX_WORKER) {
 			continue;
 		}
 
@@ -523,15 +569,15 @@ app_get_nic_tx_queues_per_port(uint8_t port)
 }
 
 int
-app_get_lcore_for_nic_rx(uint8_t port, uint8_t queue, uint32_t *lcore_out)
+fastpath_get_lcore_for_nic_rx(uint8_t port, uint8_t queue, uint32_t *lcore_out)
 {
 	uint32_t lcore;
 
-	for (lcore = 0; lcore < APP_MAX_LCORES; lcore ++) {
-		struct app_lcore_params_rx *lp = &app.lcore_params[lcore].rx;
+	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
+		struct fastpath_params_rx *lp = &app.lcore_params[lcore].rx;
 		uint32_t i;
 
-		if (app.lcore_params[lcore].type != e_APP_LCORE_RX) {
+		if (app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX) {
 			continue;
 		}
 
@@ -548,12 +594,12 @@ app_get_lcore_for_nic_rx(uint8_t port, uint8_t queue, uint32_t *lcore_out)
 }
 
 int
-app_is_socket_used(uint32_t socket)
+fastpath_is_socket_used(uint32_t socket)
 {
 	uint32_t lcore;
 
-	for (lcore = 0; lcore < APP_MAX_LCORES; lcore ++) {
-		if (app.lcore_params[lcore].type == e_APP_LCORE_DISABLED) {
+	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
+		if (app.lcore_params[lcore].type == e_FASTPATH_LCORE_DISABLED) {
 			continue;
 		}
 
@@ -566,15 +612,15 @@ app_is_socket_used(uint32_t socket)
 }
 
 uint32_t
-app_get_lcores_rx(void)
+fastpath_get_lcores_rx(void)
 {
 	uint32_t lcore, count;
 
 	count = 0;
-	for (lcore = 0; lcore < APP_MAX_LCORES; lcore ++) {
-		struct app_lcore_params_rx *lp_rx = &app.lcore_params[lcore].rx;
+	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
+		struct fastpath_params_rx *lp_rx = &app.lcore_params[lcore].rx;
 
-		if ((app.lcore_params[lcore].type != e_APP_LCORE_RX) ||
+		if ((app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX) ||
 		    (lp_rx->n_nic_queues == 0)) {
 			continue;
 		}
@@ -586,21 +632,21 @@ app_get_lcores_rx(void)
 }
 
 uint32_t
-app_get_lcores_worker(void)
+fastpath_get_lcores_worker(void)
 {
 	uint32_t lcore, count;
 
 	count = 0;
-	for (lcore = 0; lcore < APP_MAX_LCORES; lcore ++) {
-		if (app.lcore_params[lcore].type != e_APP_LCORE_WORKER &&
-            app.lcore_params[lcore].type != e_APP_LCORE_RX_WORKER) {
+	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
+		if (app.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER &&
+            app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX_WORKER) {
 			continue;
 		}
 
 		count ++;
 	}
 
-	if (count > APP_MAX_WORKER_LCORES) {
+	if (count > FASTPATH_MAX_WORKER_LCORES) {
 		rte_panic("Algorithmic error (too many worker lcores)\n");
 		return 0;
 	}
@@ -609,21 +655,21 @@ app_get_lcores_worker(void)
 }
 
 void
-app_print_params(void)
+fastpath_print_params(void)
 {
 	unsigned port, queue, lcore, i;
 
 	/* Print NIC RX configuration */
 	printf("NIC RX ports: ");
-	for (port = 0; port < APP_MAX_NIC_PORTS; port ++) {
-		uint32_t n_rx_queues = app_get_nic_rx_queues_per_port((uint8_t) port);
+	for (port = 0; port < FASTPATH_MAX_NIC_PORTS; port ++) {
+		uint32_t n_rx_queues = fastpath_get_nic_rx_queues_per_port((uint8_t) port);
 
 		if (n_rx_queues == 0) {
 			continue;
 		}
 
 		printf("%u (", port);
-		for (queue = 0; queue < APP_MAX_RX_QUEUES_PER_NIC_PORT; queue ++) {
+		for (queue = 0; queue < FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT; queue ++) {
 			if (app.nic_rx_queue_mask[port][queue] == 1) {
 				printf("%u ", queue);
 			}
@@ -633,12 +679,12 @@ app_print_params(void)
 	printf(";\n");
 
 	/* Print I/O lcore RX params */
-	for (lcore = 0; lcore < APP_MAX_LCORES; lcore ++) {
-		struct app_lcore_params_rx *lp_rx = &app.lcore_params[lcore].rx;
-        struct app_lcore_params_worker *lp_worker = &app.lcore_params[lcore].worker;
+	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
+		struct fastpath_params_rx *lp_rx = &app.lcore_params[lcore].rx;
+        struct fastpath_params_worker *lp_worker = &app.lcore_params[lcore].worker;
 
-		if ((app.lcore_params[lcore].type != e_APP_LCORE_RX &&
-             app.lcore_params[lcore].type != e_APP_LCORE_RX_WORKER) ||
+		if ((app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX &&
+             app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX_WORKER) ||
 		    (lp_rx->n_nic_queues == 0)) {
 			continue;
 		}
@@ -654,8 +700,8 @@ app_print_params(void)
 		printf("; ");
 
         printf("Tx ports  ");
-        for (i = 0; i < APP_MAX_NIC_PORTS; i ++) {
-            if (lp_worker[i].tx_queue_id != 0) {
+        for (i = 0; i < FASTPATH_MAX_NIC_PORTS; i ++) {
+            if (lp_worker->tx_queue_id[i] != 0) {
                 printf("(%u, %u)  ", i, (unsigned) lp_worker->tx_queue_id[i]);
             }
         }
@@ -663,10 +709,10 @@ app_print_params(void)
 	}
 
 	/* Print worker lcore RX params */
-	for (lcore = 0; lcore < APP_MAX_LCORES; lcore ++) {
-		struct app_lcore_params_worker *lp = &app.lcore_params[lcore].worker;
+	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
+		struct fastpath_params_worker *lp = &app.lcore_params[lcore].worker;
 
-		if (app.lcore_params[lcore].type != e_APP_LCORE_WORKER) {
+		if (app.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER) {
 			continue;
 		}
 

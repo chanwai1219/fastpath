@@ -73,12 +73,15 @@
 #include <rte_lpm.h>
 
 #include "main.h"
+#include "log.h"
 
 int
 main(int argc, char **argv)
 {
 	uint32_t lcore;
 	int ret;
+
+    fastpath_init_log();
 
 	/* Init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -88,18 +91,18 @@ main(int argc, char **argv)
 	argv += ret;
 
 	/* Parse application arguments (after the EAL ones) */
-	ret = app_parse_args(argc, argv);
+	ret = fastpath_parse_args(argc, argv);
 	if (ret < 0) {
-		app_print_usage();
+		fastpath_print_usage();
 		return -1;
 	}
 
 	/* Init */
-	app_init();
-	app_print_params();
+	fastpath_init();
+	fastpath_print_params();
 
 	/* Launch per-lcore init on every lcore */
-	rte_eal_mp_remote_launch(app_lcore_main_loop, NULL, CALL_MASTER);
+	rte_eal_mp_remote_launch(fastpath_main_loop, NULL, CALL_MASTER);
 	RTE_LCORE_FOREACH_SLAVE(lcore) {
 		if (rte_eal_wait_lcore(lcore) < 0) {
 			return -1;
