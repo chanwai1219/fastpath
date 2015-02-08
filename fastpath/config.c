@@ -103,7 +103,8 @@ static const char usage[] =
 "           D = I/O TX lcore write burst size to NIC TX (default value is %u)   \n"
 "    --pos-lb POS : Position of the 1-byte field within the input packet used by\n"
 "           the I/O RX lcores to identify the worker lcore for the current      \n"
-"           packet (default value is %u)                                        \n";
+"           packet (default value is %u)                                        \n"
+"    --l \"Log file\" : fastpath log file name                                  \n";
 
 void
 fastpath_print_usage(void)
@@ -428,6 +429,7 @@ fastpath_parse_args(int argc, char **argv)
 		{"rsz", 1, 0, 0},
 		{"bsz", 1, 0, 0},
 		{"pos-lb", 1, 0, 0},
+        {"l", 1, 0, 0},
 		{NULL, 0, 0, 0}
 	};
 	uint32_t arg_w = 0;
@@ -484,6 +486,9 @@ fastpath_parse_args(int argc, char **argv)
 					printf("Incorrect value for --pos-lb argument (%d)\n", ret);
 					return -1;
 				}
+			}
+            if (!strcmp(lgopts[option_index].name, "l")) {
+				fastpath_log_set_file(optarg);
 			}
 			break;
 

@@ -123,12 +123,12 @@ fastpath_process_packet_bulk(struct rte_mbuf ** pkts, int nb_rx)
 	/* Prefetch and handle already prefetched packets */
 	for (j = 0; j < (nb_rx - PREFETCH_OFFSET); j++) {
 		rte_prefetch0(rte_pktmbuf_mtod(pkts[j + PREFETCH_OFFSET], void *));
-		//fastpath_process_packet(pkts[j]);
+		ethernet_input(pkts[j]);
 	}
 
 	/* Handle remaining prefetched packets */
 	for (; j < nb_rx; j++)
-		;//fastpath_process_packet(pkts[j]);
+		ethernet_input(pkts[j]);
 }
 
 static inline void
