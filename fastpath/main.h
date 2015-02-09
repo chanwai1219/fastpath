@@ -199,6 +199,10 @@
 #error "FASTPATH_DEFAULT_IO_RX_LB_POS is too big"
 #endif
 
+#ifndef FASTPATH_DEFAULT_NUMA_ON
+#define FASTPATH_DEFAULT_NUMA_ON 1
+#endif
+
 struct mbuf_array {
 	struct rte_mbuf *array[FASTPATH_MBUF_ARRAY_SIZE];
 	uint32_t n_mbufs;
@@ -294,6 +298,7 @@ struct fastpath_params {
 
 	/* load balancing */
 	uint8_t pos_lb;
+    uint8_t numa_on;
 } __rte_cache_aligned;
 
 extern struct fastpath_params app;

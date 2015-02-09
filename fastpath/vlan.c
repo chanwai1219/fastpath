@@ -12,11 +12,10 @@ enum {
 struct net_device *vlan_dev[FASTPATH_MAX_NIC_PORTS];
 
 typedef struct vlan_private {
-    struct net_device *ethernet_dev;
-    struct net_device *bridge_dev[VLAN_VID_LEN];
     uint16_t port;
-    uint8_t mode;
-    uint8_t native;
+    uint16_t vid;
+    struct net_device *ethernet_dev;
+    struct net_device *bridge_dev;
 };
 
 struct net_device * find_vlan_dev(uint32_t port)
@@ -45,66 +44,38 @@ struct net_device * find_vlan_dev(uint32_t port)
     return NULL;
 }
 
-int vlan_receive(struct rte_mbuf *m, struct net_device *dev)
+void vlan_receive(struct rte_mbuf *m, struct net_device *peer, struct net_device *dev)
 {
-    uint32_t vid;
+    struct vlan_hdr  *vlan_hdr;
+    struct vlan_private *private = (struct vlan_private *)dev->private;
+
+    rte_pktmbuf_adj(m, (uint16_t)sizeof(struct vlan_hdr));
+    memmove(m->pkt.data - sizeof(struct ether_hdr), 
+        m->pkt.data - sizeof(struct ether_hdr) - sizeof(struct vlan_hdr), 
+        2 * sizeof(struct ether_addr));
+
+    SEND_PKT(m, dev, private->bridge_dev);
+    
+    return;
+}
+
+void vlan_xmit(struct rte_mbuf *m, struct net_device *peer, struct net_device *dev)
+{
     struct ether_hdr *eth;
     struct vlan_hdr  *vlan_hdr;
     struct vlan_private *private = (struct vlan_private *)dev->private;
-
+    
+    rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct vlan_hdr));
+    memmove(m->pkt.data, m->pkt.data + sizeof(struct vlan_hdr), 
+        2 * sizeof(struct ether_addr));
     eth = rte_pktmbuf_mtod(m, struct ether_hdr *);
-    rte_pktmbuf_adj(m, (uint16_t)sizeof(struct ether_hdr));
-    vlan_hdr = rte_pktmbuf_mtod(m, struct vlan_hdr *);
+    vlan_hdr = (struct vlan_hdr *)(eth + 1);
+    vlan_hdr->vlan_tci = htons(private->vid);
+    vlan_hdr->eth_proto = htons(ETHER_TYPE_VLAN);    
     
-    if (ntohs(eth->ether_type) == ETHER_TYPE_VLAN) {
-        vid = ntohs(vlan_hdr->vlan_tci);
-        
-        if (private->mode == VLAN_MODE_ACCESS) {
-            fastpath_log_error("access vlan %s receive packet vid %x, drop\n", 
-                dev->name, vid);
-            rte_pktmbuf_free(m);
-            return 0;
-        } else {
-            fastpath_log_debug("trunk vlan %s receive packet vid %x\n", 
-                dev->name, vid);
-
-            rte_pktmbuf_adj(m, (uint16_t)sizeof(struct vlan_hdr));
-            memmove((char *)eth + sizeof(vlan_hdr), eth, 12);
-
-            SEND_PKT(m, private->bridge_dev[vid]);
-        }
-    } else {
-        if (private->mode == VLAN_MODE_ACCESS) {
-            fastpath_log_debug("access vlan %s receive untagged packet, send to %d\n",
-                dev->name, private->native);
-
-            SEND_PKT(m, private->bridge_dev[private->native];
-        } else {
-            fastpath_log_debug("trunk vlan %s receive untagged packet, send to %d\n",
-                dev->name, private->native);
-
-            SEND_PKT(m, private->bridge_dev[private->native];
-        }
-    }
+    SEND_PKT(m, dev, private->ethernet_dev);
     
-    return 0;
-}
-
-int vlan_xmit(struct rte_mbuf *m, struct net_device *dev)
-{
-    struct vlan_hdr  *vlan_hdr;
-    struct vlan_private *private = (struct vlan_private *)dev->private;
-    
-    if (private->mode == VLAN_MODE_ACCESS) {
-        SEND_PKT(private->ethernet_dev);
-    } else {
-        rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct vlan_hdr));
-        vlan_hdr = rte_pktmbuf_mtod(m, struct vlan_hdr *);
-        
-    }
-    
-    SEND_PKT(m, private->ethernet_dev);
-    return 0;
+    return;
 }
 
 int vlan_set_ethernet(struct net_device *vlan, struct net_device *ethernet)
@@ -147,7 +118,7 @@ int vlan_set_bridge(struct net_device *vlan, uint32_t vid, struct net_device *br
     return 0;
 }
 
-int vlan_init(uint16_t port, uint16_t mode, uint16_t native, uint8_t *map)
+int vlan_init(uint16_t port)
 {
     struct net_device *dev;
     struct vlan_private *private;
@@ -162,13 +133,13 @@ int vlan_init(uint16_t port, uint16_t mode, uint16_t native, uint8_t *map)
         return -1;
     }
 
-    dev = rte_malloc(NULL, sizeof(struct net_device), 0);
+    dev = rte_zmalloc(NULL, sizeof(struct net_device), 0);
     if (dev == NULL) {
         fastpath_log_error("vlan_init: malloc net_device failed\n");
         return -1;
     }
 
-    private = rte_malloc(NULL, sizeof(struct vlan_private), 0);
+    private = rte_zmalloc(NULL, sizeof(struct vlan_private), 0);
     if (private == NULL) {
         rte_free(dev);
         
@@ -176,15 +147,11 @@ int vlan_init(uint16_t port, uint16_t mode, uint16_t native, uint8_t *map)
         return -1;
     }
 
-    memset(private, 0, sizeof(struct vlan_private));
-
     dev->ifindex = 0;
+    dev->type = NET_DEVICE_TYPE_VLAN;
     snprintf(dev->name, IFNAMSIZ, "vlan%d", vid);
     
     private->port = port;
-    private->mode = mode;
-    private->native = native;
-    memcpy(private->vid, map, sizeof(private->vid));
     
     dev->private = (void *)private;
 

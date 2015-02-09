@@ -104,6 +104,7 @@ static const char usage[] =
 "    --pos-lb POS : Position of the 1-byte field within the input packet used by\n"
 "           the I/O RX lcores to identify the worker lcore for the current      \n"
 "           packet (default value is %u)                                        \n"
+"    --no-numa: optional, disable numa awareness                                \n"
 "    --l \"Log file\" : fastpath log file name                                  \n";
 
 void
@@ -429,6 +430,7 @@ fastpath_parse_args(int argc, char **argv)
 		{"rsz", 1, 0, 0},
 		{"bsz", 1, 0, 0},
 		{"pos-lb", 1, 0, 0},
+        {"no-numa", 0, 0, 0},
         {"l", 1, 0, 0},
 		{NULL, 0, 0, 0}
 	};
@@ -438,10 +440,11 @@ fastpath_parse_args(int argc, char **argv)
 	uint32_t arg_rsz = 0;
 	uint32_t arg_bsz = 0;
 	uint32_t arg_pos_lb = 0;
+	uint32_t arg_no_numa = 0;
 
 	argvopt = argv;
 
-	while ((opt = getopt_long(argc, argvopt, "",
+	while ((opt = getopt_long(argc, argvopt, "N",
 				lgopts, &option_index)) != EOF) {
 
 		switch (opt) {
@@ -487,6 +490,10 @@ fastpath_parse_args(int argc, char **argv)
 					return -1;
 				}
 			}
+            if (!strcmp(lgopts[option_index].name, "no-numa")) {
+                arg_no_numa = 1;
+				app.numa_on = 0;
+			}
             if (!strcmp(lgopts[option_index].name, "l")) {
 				fastpath_log_set_file(optarg);
 			}
@@ -520,6 +527,11 @@ fastpath_parse_args(int argc, char **argv)
 	if (arg_pos_lb == 0) {
 		app.pos_lb = FASTPATH_DEFAULT_IO_RX_LB_POS;
 	}
+    
+    if (arg_no_numa == 0) {
+        app.numa_on = FASTPATH_DEFAULT_NUMA_ON;
+    }
+    
 	if (optind >= 0)
 		argv[optind - 1] = prgname;
 
