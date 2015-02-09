@@ -5,6 +5,7 @@
 
 #define BRIDGE_FDB_FLAG_DYNAMIC 0x01
 #define BRIDGE_FDB_FLAG_STATIC  0x02
+#define BRIDGE_FDB_FLAG_LOCAL   0x10
 
 #define BRIDGE_MAX_PORTS        16
 
@@ -27,35 +28,44 @@ struct bridge_private {
     uint16_t vid;
     LIST_HEAD (, bridge_port) port_list;
     struct net_device *interface_dev;
-    struct net_device *vlan_dev[BRIDGE_PORT_MAX];
-    struct bridge_fdb_entry bridge_fdb[BRIDGE_HASH_ENTRIES];
+    struct net_device *port_dev[BRIDGE_MAX_PORTS];
     struct rte_hash *bridge_hash_tbl[NB_SOCKETS];
+    struct bridge_fdb_entry bridge_fdb[BRIDGE_HASH_ENTRIES];
 };
 
-uint16_t bridge_get_port(struct net_device *bridge, struct net_device *vlan)
+struct bridge_port * bridge_get_port(struct net_device *br, struct net_device *dev)
 {
-    uint32_t i;
-    struct bridge_private *private = bridge->private;
+    struct bridge_port *p;
+    struct bridge_private *private = (struct bridge_private *)br->private;
 
-    for (i = 0; i < BRIDGE_PORT_MAX; i++) {
-        if (private->vlan_dev[i] == vlan) {
-            return 
+    LIST_FOREACH(p, &private->port_list, list) {
+        if (p->dev == dev) {
+            return p;
         }
     }
+
+    return NULL;
 }
 
 void bridge_receive(struct rte_mbuf *m, struct net_device *peer, struct net_device *dev)
 {
-    uint16_t port;
     struct ether_hdr *eth;
+    struct bridge_port *port;
+    struct bridge_fdb_entry *entry;
     struct bridge_private *private = (struct bridge_private *)dev->private;
 
     eth = (struct ether_hdr *)(m->pkt.data - sizeof(struct ether_hdr));
 
-    port = 
+    port = bridge_get_port(dev, peer);
+    if (port == NULL) {
+        fastpath_log_error("dev %s doest not participate in bridge %s\n", 
+            peer->name, dev->name);
+        rte_pktmbuf_free(m);
+        return;
+    }
 
     fastpath_log_debug("bridge %s receive packet "MAC_FMT" ==> "MAC_FMT" from %d\n",
-        MAC_ARG(&eth->s_addr), MAC_ARG(&eth->d_addr), private->port);
+        MAC_ARG(&eth->s_addr), MAC_ARG(&eth->d_addr), port->port_no);
     
     if (!is_valid_assigned_ether_addr(&eth->s_addr)) {
         fastpath_log_error("bridge %s receive invalid packet\n", dev->name);
@@ -69,8 +79,17 @@ void bridge_receive(struct rte_mbuf *m, struct net_device *peer, struct net_devi
         return;
     }
 
-    if (is_multicast_ether_addr(&eth->d_addr)) {
-        
+    entry = bridge_fdb_lookup(dev, &eth->d_addr);
+    if (entry == NULL) {
+        if (is_multicast_ether_addr(&eth->d_addr)) {
+            
+        }
+    } else {
+        if (entry->flag & BRIDGE_FDB_FLAG_LOCAL) {
+            SEND_PKT(m, dev, private->interface_dev);
+        } else {
+            SEND_PKT(m, dev, private->port_dev[entry->port]);
+        }
     }
 }
 
@@ -111,7 +130,8 @@ struct bridge_fdb_entry * bridge_fdb_create(const struct ether_addr *addr, uint8
     return entry;
 }
 
-int bridge_fdb_update(struct net_device *dev, const struct ether_addr *addr)
+int bridge_fdb_update(struct net_device *dev, 
+    struct ether_addr *addr, struct bridge_port *port)
 {
     int ret;
     int socketid;
@@ -132,10 +152,12 @@ int bridge_fdb_update(struct net_device *dev, const struct ether_addr *addr)
     if (entry == NULL) {
         return -1;
     }
+    entry->port = port->port_no;
+    entry->flag = BRIDGE_FDB_FLAG_DYNAMIC;
 
     lcore_id = rte_lcore_id();
     socketid = rte_lcore_to_socket_id(lcore_id);
-    ret = rte_hash_add_key(private->bridge_hash_tbl[socketid], addr);
+    ret = rte_hash_add_key(private->bridge_hash_tbl[socketid], (void *)addr);
     if (ret < 0) {
         fastpath_log_error("bridge_fdb_update: add key failed\n");
         return -1;
@@ -146,34 +168,12 @@ int bridge_fdb_update(struct net_device *dev, const struct ether_addr *addr)
     return 0;
 }
 
-/* find an available port number */
-static int find_portno(struct net_bridge *br)
-{
-    int index;
-    struct net_bridge_port *p;
-    unsigned long *inuse;
-
-    inuse = rte_zmalloc(BITS_TO_LONGS(BR_MAX_PORTS), sizeof(unsigned long),
-            GFP_KERNEL);
-    if (!inuse)
-        return -ENOMEM;
-
-    set_bit(0, inuse);    /* zero is reserved */
-    list_for_each_entry(p, &br->port_list, list) {
-        set_bit(p->port_no, inuse);
-    }
-    index = find_first_zero_bit(inuse, BR_MAX_PORTS);
-    kfree(inuse);
-
-    return (index >= BR_MAX_PORTS) ? -EXFULL : index;
-}
-
 int bridge_add_if(struct net_device *br, struct net_device *dev)
 {
     uint32_t index;
     unsigned long inuse;
     struct bridge_port *p;
-    struct bridge_private *private = br->private;
+    struct bridge_private *private = (struct bridge_private *)br->private;
     
     if (dev->type != NET_DEVICE_TYPE_ETHERNET && dev->type != NET_DEVICE_TYPE_VLAN) {
         fastpath_log_error("bridge_add_if: add dev type %d failed\n", dev->type);
@@ -198,17 +198,43 @@ int bridge_add_if(struct net_device *br, struct net_device *dev)
 
     LIST_INSERT_HEAD(&private->port_list, p, list);
 
+    private->port_dev[index] = dev;
+
+    fastpath_log_info("bridge %s add port %s index %d\n", br->name, dev->name, index);
+
     return 0;
 }
 
 int bridge_del_if(struct net_device *br, struct net_device *dev)
 {
+    struct bridge_port *p = NULL;
+    struct bridge_private *private = (struct bridge_private *)br->private;
+
+    LIST_FOREACH(p, &private->port_list, list) {
+        if (p->dev == dev) {
+            break;
+        }
+    }
+
+    if (p == NULL) {
+        return -ENOENT;
+    }
+    
+    LIST_REMOVE(p, list);
+    private->port_dev[p->index] = NULL;
+
+    fastpath_log_info("bridge %s delete port %s index %d\n", br->name, dev->name, index);
+
+    rte_free(p);
+
+    return 0;
 }
 
-int bridge_fdb_init(struct bridge_private *private)
+int bridge_fdb_init(struct net_device *br)
 {
     int socketid;
     unsigned lcore_id;
+    struct bridge_private *private = (struct bridge_private *)br->private;
 
     struct rte_hash_parameters bridge_hash_params = {
         .name = NULL,
@@ -238,10 +264,13 @@ int bridge_fdb_init(struct bridge_private *private)
                 }
             }
             
-            return -1;
+            return -ENOMEM;
         }
+
+        fastpath_log_info("bridge %s create hash table %s\n", br->name, bridge_hash_params.name);
     }
-        
+
+    return 0;
 }
 
 int bridge_init(uint16_t vid)
@@ -274,7 +303,7 @@ int bridge_init(uint16_t vid)
     
     private->vid = vid;
     LIST_INIT(&private->port_list);
-    if (bridge_fdb_init(private) != 0) {
+    if (bridge_fdb_init(dev) != 0) {
         rte_free(private);
         rte_free(dev);
 
