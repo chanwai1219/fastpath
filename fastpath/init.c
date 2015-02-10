@@ -129,7 +129,7 @@ fastpath_init_mbuf_pools(void)
 
 		snprintf(name, sizeof(name), "mbuf_pool_%u", socket);
 		printf("Creating the mbuf pool for socket %u ...\n", socket);
-		fastpath.pools[socket] = rte_mempool_create(
+		fastpath.pktbuf_pools[socket] = rte_mempool_create(
 			name,
 			FASTPATH_DEFAULT_MEMPOOL_BUFFERS,
 			FASTPATH_DEFAULT_MBUF_SIZE,
@@ -139,7 +139,7 @@ fastpath_init_mbuf_pools(void)
 			rte_pktmbuf_init, NULL,
 			socket,
 			0);
-		if (fastpath.pools[socket] == NULL) {
+		if (fastpath.pktbuf_pools[socket] == NULL) {
 			rte_panic("Cannot create mbuf pool on socket %u\n", socket);
 		}
 	}
@@ -150,9 +150,49 @@ fastpath_init_mbuf_pools(void)
 		}
 
 		socket = rte_lcore_to_socket_id(lcore);
-		fastpath.lcore_params[lcore].pool = fastpath.pools[socket];
+		fastpath.lcore_params[lcore].pktbuf_pool = fastpath.pktbuf_pools[socket];
 	}
 }
+
+static void
+fastpath_init_indirect_mbuf_pools(void)
+{
+	unsigned socket, lcore;
+
+	/* Init the buffer pools */
+	for (socket = 0; socket < FASTPATH_MAX_SOCKETS; socket ++) {
+		char name[32];
+		if (fastpath_is_socket_used(socket) == 0) {
+			continue;
+		}
+
+		snprintf(name, sizeof(name), "indirect_mbuf_pool_%u", socket);
+		printf("Creating the indirect mbuf pool for socket %u ...\n", socket);
+		fastpath.indirect_pools[socket] = rte_mempool_create(
+			name,
+			FASTPATH_DEFAULT_MEMPOOL_BUFFERS,
+			FASTPATH_DEFAULT_INDIRECT_MBUF_SIZE,
+			32,
+			0,
+			NULL, NULL,
+			rte_pktmbuf_init, NULL,
+			socket,
+			0);
+		if (fastpath.indirect_pools[socket] == NULL) {
+			rte_panic("Cannot create mbuf pool on socket %u\n", socket);
+		}
+	}
+
+	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
+		if (fastpath.lcore_params[lcore].type == e_FASTPATH_LCORE_DISABLED) {
+			continue;
+		}
+
+		socket = rte_lcore_to_socket_id(lcore);
+		fastpath.lcore_params[lcore].indirect_pool = fastpath.indirect_pools[socket];
+	}
+}
+
 
 static void
 fastpath_init_lpm_tables(void)
@@ -389,7 +429,7 @@ fastpath_init_nics(void)
 
 			fastpath_get_lcore_for_nic_rx(port, queue, &lcore);
 			socket = rte_lcore_to_socket_id(lcore);
-			pool = fastpath.lcore_params[lcore].pool;
+			pool = fastpath.lcore_params[lcore].pktbuf_pool;
 
 			printf("Initializing NIC port %u RX queue %u ...\n",
 				(unsigned) port,
@@ -451,6 +491,7 @@ fastpath_init(void)
 {
 	fastpath_assign_worker_ids();
 	fastpath_init_mbuf_pools();
+    fastpath_init_indirect_mbuf_pools();
 	fastpath_init_lpm_tables();
 	fastpath_init_rings();
 	fastpath_init_nics();

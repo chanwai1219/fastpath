@@ -17,6 +17,7 @@ struct bridge_fdb_entry {
 
 struct bridge_private {
     uint16_t vid;
+    uint16_t port_num;
     struct net_device *interface_dev;
     struct net_device *port_dev[BRIDGE_MAX_PORTS];
     struct rte_hash *bridge_hash_tbl[FASTPATH_MAX_SOCKETS];
@@ -26,6 +27,7 @@ struct bridge_private {
 struct net_device *bridge_dev[VLAN_VID_MAX];
 
 static uint8_t bridge_get_port(struct net_device *br, struct net_device *dev);
+static void bridge_flood(struct rte_mbuf *m, struct net_device *br, uint8_t input);
 static struct bridge_fdb_entry * bridge_fdb_lookup(struct net_device *dev, struct ether_addr* ea);
 static struct bridge_fdb_entry * bridge_fdb_create(uint8_t port, uint8_t flag);
 static int bridge_fdb_update(struct net_device *dev, struct ether_addr *addr, uint8_t index);
@@ -43,6 +45,92 @@ static uint8_t bridge_get_port(struct net_device *br, struct net_device *dev)
     }
 
     return BRIDGE_INVALID_PORT;
+}
+
+static inline struct rte_mbuf *
+bridge_out_pkt(struct rte_mbuf *pkt, int use_clone)
+{
+    int socketid;
+    struct rte_mbuf *hdr;
+    struct rte_mempool *mp;
+
+    socketid = rte_socket_id();
+    mp = fastpath.indirect_pools[socketid];
+
+    /* Create new mbuf for the header. */
+    if (unlikely ((hdr = rte_pktmbuf_alloc(mp)) == NULL))
+        return (NULL);
+
+    /* If requested, then make a new clone packet. */
+    if (use_clone != 0 &&
+        unlikely ((pkt = rte_pktmbuf_clone(pkt, mp)) == NULL)) {
+        rte_pktmbuf_free(hdr);
+        return (NULL);
+    }
+
+    /* prepend new header */
+    hdr->next = pkt;
+
+
+    /* update header's fields */
+    hdr->pkt_len = (uint16_t)(hdr->data_len + pkt->pkt_len);
+    hdr->nb_segs = (uint8_t)(pkt->nb_segs + 1);
+
+    /* copy metadata from source packet*/
+    hdr->port = pkt->port;
+    hdr->vlan_tci = pkt->vlan_tci;
+    hdr->tx_offload = pkt->tx_offload;
+    hdr->hash = pkt->hash;
+
+    hdr->ol_flags = pkt->ol_flags;
+
+    __rte_mbuf_sanity_check(hdr, 1);
+    return (hdr);
+}
+
+static void bridge_flood(struct rte_mbuf *m, struct net_device *br, uint8_t input)
+{
+    uint32_t i, clone_num, use_clone;
+    struct rte_mbuf *mc;
+    struct net_device *dst[BRIDGE_MAX_PORTS];
+    struct bridge_private *private = (struct bridge_private *)br->private;
+
+    memset(dst, 0, sizeof(dst));
+
+    clone_num = 0;
+
+    for (i = 0; i < BRIDGE_MAX_PORTS; i++) {
+        if (input != i && private->port_dev[i] != NULL) {
+            dst[clone_num] = private->port_dev[i];
+            clone_num++;
+        }
+    }
+    if (input == BRIDGE_MAX_PORTS) {
+        dst[clone_num] = private->interface_dev;
+        clone_num++;
+    }
+
+    use_clone = (private->port_num <= FASTPATH_CLONE_PORTS 
+        && m->nb_segs <= FASTPATH_CLONE_SEGS);
+
+    if (use_clone == 0) {
+        rte_pktmbuf_refcnt_update(m, (uint16_t)clone_num);
+    }
+
+    for (i = 0; i < (clone_num - 1); i++) {
+        if (likely((mc = bridge_out_pkt(m, use_clone)) != NULL)) {
+            SEND_PKT(mc, br, dst[i]);
+        } else if (use_clone == 0) {
+            rte_pktmbuf_free(m);
+            return;
+        }
+    }
+
+    if (use_clone != 0) {
+        SEND_PKT(m, br, dst[clone_num - 1]);
+    } else {
+        rte_pktmbuf_free(m);
+    }
 }
 
 void bridge_receive(struct rte_mbuf *m, struct net_device *peer, struct net_device *dev)
@@ -80,7 +168,7 @@ void bridge_receive(struct rte_mbuf *m, struct net_device *peer, struct net_devi
     entry = bridge_fdb_lookup(dev, &eth->d_addr);
     if (entry == NULL) {
         if (is_multicast_ether_addr(&eth->d_addr)) {
-            
+            bridge_flood(m, dev, port);
         }
     } else {
         if (entry->flag & BRIDGE_FDB_FLAG_LOCAL) {
@@ -98,11 +186,12 @@ void bridge_xmit(struct rte_mbuf *m, __rte_unused struct net_device *peer, struc
     struct bridge_private *private = (struct bridge_private *)dev->private;
 
     if (is_multicast_ether_addr(&eth->d_addr)) {
-        /* flood */
+        bridge_flood(m, dev, BRIDGE_MAX_PORTS);
     } else {
         entry = bridge_fdb_lookup(dev, &eth->d_addr);
         if (entry == NULL) {
-            /* flood */
+            bridge_flood(m, dev, BRIDGE_MAX_PORTS);
+            return;
         }
 
         SEND_PKT(m, dev, private->port_dev[entry->port]);
@@ -113,11 +202,9 @@ struct bridge_fdb_entry * bridge_fdb_lookup(struct net_device *dev, struct ether
 {
     int ret;
     int socketid;
-    unsigned lcore_id;
     struct bridge_private *private = (struct bridge_private *)dev->private;
 
-    lcore_id = rte_lcore_id();
-    socketid = rte_lcore_to_socket_id(lcore_id);
+    socketid = rte_socket_id();
     ret = rte_hash_lookup(private->bridge_hash_tbl[socketid], (const void *)ea);
     if (ret < 0) {
         return NULL;
@@ -147,7 +234,6 @@ int bridge_fdb_update(struct net_device *dev,
 {
     int ret;
     int socketid;
-    unsigned lcore_id;
     struct bridge_fdb_entry *entry;
     struct bridge_private *private = (struct bridge_private *)dev->private;
 
@@ -165,8 +251,7 @@ int bridge_fdb_update(struct net_device *dev,
         return -ENOMEM;
     }
 
-    lcore_id = rte_lcore_id();
-    socketid = rte_lcore_to_socket_id(lcore_id);
+    socketid = rte_socket_id();
     ret = rte_hash_add_key(private->bridge_hash_tbl[socketid], (void *)addr);
     if (ret < 0) {
         fastpath_log_error("bridge_fdb_update: add key failed\n");
@@ -243,6 +328,7 @@ int bridge_add_if(struct net_device *br, struct net_device *dev)
     }
 
     private->port_dev[i] = dev;
+    private->port_num += 1;
 
     fastpath_log_info("bridge %s add port %s index %d\n", br->name, dev->name, i);
 
@@ -266,6 +352,7 @@ int bridge_del_if(struct net_device *br, struct net_device *dev)
     }
     
     private->port_dev[i] = NULL;
+    private->port_num -= 1;
 
     fastpath_log_info("bridge %s delete port %s index %d\n", br->name, dev->name, i);
 
@@ -301,6 +388,7 @@ int bridge_init(uint16_t vid)
     snprintf(dev->name, sizeof(dev->name), "br%d", vid);
     
     private->vid = vid;
+    private->port_num = 0;
     if (bridge_fdb_init(dev) != 0) {
         rte_free(private);
         rte_free(dev);

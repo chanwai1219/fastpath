@@ -79,6 +79,10 @@
 #define FASTPATH_DEFAULT_MBUF_SIZE (2048 + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
 #endif
 
+#ifndef FASTPATH_DEFAULT_INDIRECT_MBUF_SIZE
+#define FASTPATH_DEFAULT_INDIRECT_MBUF_SIZE (sizeof(struct rte_mbuf))
+#endif
+
 #ifndef FASTPATH_DEFAULT_MEMPOOL_BUFFERS
 #define FASTPATH_DEFAULT_MEMPOOL_BUFFERS   8192 * 4
 #endif
@@ -203,6 +207,14 @@
 #define FASTPATH_DEFAULT_NUMA_ON 1
 #endif
 
+#ifndef FASTPATH_CLONE_PORTS
+#define	FASTPATH_CLONE_PORTS    2
+#endif
+
+#ifndef FASTPATH_CLONE_SEGS
+#define	FASTPATH_CLONE_SEGS     2
+#endif
+
 struct mbuf_array {
 	struct rte_mbuf *array[FASTPATH_MBUF_ARRAY_SIZE];
 	uint32_t n_mbufs;
@@ -261,7 +273,8 @@ struct fastpath_lcore_params {
 	struct fastpath_params_rx rx;
 	struct fastpath_params_worker worker;
 	enum fastpath_lcore_type type;
-	struct rte_mempool *pool;
+	struct rte_mempool *pktbuf_pool;
+    struct rte_mempool *indirect_pool;
 } __rte_cache_aligned;
 
 struct fastpath_lpm_rule {
@@ -278,7 +291,8 @@ struct fastpath_params {
 	uint8_t nic_rx_queue_mask[FASTPATH_MAX_NIC_PORTS][FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT];
 
 	/* mbuf pools */
-	struct rte_mempool *pools[FASTPATH_MAX_SOCKETS];
+	struct rte_mempool *pktbuf_pools[FASTPATH_MAX_SOCKETS];
+    struct rte_mempool *indirect_pools[FASTPATH_MAX_SOCKETS];
 
 	/* LPM tables */
 	struct rte_lpm *lpm_tables[FASTPATH_MAX_SOCKETS];
