@@ -29,8 +29,6 @@ static uint8_t bridge_get_port(struct net_device *br, struct net_device *dev);
 static struct bridge_fdb_entry * bridge_fdb_lookup(struct net_device *dev, struct ether_addr* ea);
 static struct bridge_fdb_entry * bridge_fdb_create(uint8_t port, uint8_t flag);
 static int bridge_fdb_update(struct net_device *dev, struct ether_addr *addr, uint8_t index);
-static int bridge_add_if(struct net_device *br, struct net_device *dev);
-static int bridge_del_if(struct net_device *br, struct net_device *dev);
 static int bridge_fdb_init(struct net_device *br);
 
 static uint8_t bridge_get_port(struct net_device *br, struct net_device *dev)
@@ -226,8 +224,7 @@ int bridge_fdb_init(struct net_device *br)
 
 int bridge_add_if(struct net_device *br, struct net_device *dev)
 {
-    uint32_t index, i;
-    unsigned long inuse;
+    uint32_t i;
     struct bridge_private *private = (struct bridge_private *)br->private;
     
     if (dev->type != NET_DEVICE_TYPE_ETHERNET && dev->type != NET_DEVICE_TYPE_VLAN) {
@@ -235,17 +232,19 @@ int bridge_add_if(struct net_device *br, struct net_device *dev)
         return -EINVAL;
     }
 
-    inuse = 0;
     for (i = 0; i < BRIDGE_MAX_PORTS; i++) {
         if (private->port_dev[i] != NULL) {
-            set_bit(i, &inuse);
+            break;
         }
     }
-    index = find_first_zero_bit(&inuse, BRIDGE_MAX_PORTS);
+    if (i == BRIDGE_MAX_PORTS) {
+        fastpath_log_error("bridge_add_if: bridge %s already has %d ports\n", dev->name, i);
+        return -EINVAL;
+    }
 
-    private->port_dev[index] = dev;
+    private->port_dev[i] = dev;
 
-    fastpath_log_info("bridge %s add port %s index %d\n", br->name, dev->name, index);
+    fastpath_log_info("bridge %s add port %s index %d\n", br->name, dev->name, i);
 
     return 0;
 }
@@ -268,7 +267,7 @@ int bridge_del_if(struct net_device *br, struct net_device *dev)
     
     private->port_dev[i] = NULL;
 
-    fastpath_log_info("bridge %s delete port %s index %d\n", br->name, dev->name, index);
+    fastpath_log_info("bridge %s delete port %s index %d\n", br->name, dev->name, i);
 
     return 0;
 }
