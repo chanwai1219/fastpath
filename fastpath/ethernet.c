@@ -1,21 +1,21 @@
 
 #include "fastpath.h"
 
-struct net_device *ethernet_dev[FASTPATH_MAX_NIC_PORTS];
-
-typedef struct ethernet_private {
+struct ethernet_private {
     uint16_t port;
     uint16_t mode;
     uint16_t native;
     uint16_t reserved;
-    net_device *vlan_dev[VLAN_VID_LEN];
-    net_device *bridge_dev;
+    struct net_device *vlan_dev[VLAN_VID_MAX];
+    struct net_device *bridge_dev;
 };
 
-struct net_device * find_ethernet_dev(uint32_t port)
-{
-    struct net_device *dev;
-    
+struct net_device *ethernet_dev[FASTPATH_MAX_NIC_PORTS];
+
+static struct net_device * find_ethernet_dev(uint32_t port);
+
+static struct net_device * find_ethernet_dev(uint32_t port)
+{    
     if (port >= FASTPATH_MAX_NIC_PORTS) {
         fastpath_log_error("find_ethernet_dev: invalid port %d\n", port);
         return NULL;
@@ -36,17 +36,19 @@ void ethernet_input(struct rte_mbuf *m)
         return;
     }
 
-    ethernet_receive(m, dev);
+    ethernet_receive(m, NULL, dev);
 
     return;
 }
 
-void ethernet_receive(struct rte_mbuf *m, struct net_device *peer, struct net_device *dev)
+void ethernet_receive(struct rte_mbuf *m, __rte_unused struct net_device *peer, struct net_device *dev)
 {
     uint32_t vid;
     struct ether_hdr *eth;
     struct vlan_hdr  *vlan_hdr;
-    struct ethernet_private *private;
+    struct ethernet_private *private = (struct ethernet_private *)dev->private;
+
+    fastpath_log_debug("ethernet %s receive packet\n", dev->name);
 
     eth = rte_pktmbuf_mtod(m, struct ether_hdr *);
     rte_pktmbuf_adj(m, (uint16_t)sizeof(struct ether_hdr));
@@ -59,7 +61,7 @@ void ethernet_receive(struct rte_mbuf *m, struct net_device *peer, struct net_de
             fastpath_log_error("access vlan %s receive packet vid %x, drop\n", 
                 dev->name, vid);
             rte_pktmbuf_free(m);
-            return 0;
+            return;
         } else {
             fastpath_log_debug("trunk vlan %s receive packet vid %x\n", dev->name, vid);
 
@@ -79,18 +81,23 @@ void ethernet_receive(struct rte_mbuf *m, struct net_device *peer, struct net_de
     return;
 }
 
-void ethernet_xmit(struct rte_mbuf *m, struct net_device *peer, struct net_device *dev)
+void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct net_device *peer, struct net_device *dev)
 {
-    uint32_t n_mbufs, n_pkts;
+    uint32_t n_mbufs, n_pkts, port;
     unsigned lcore = rte_lcore_id();
-    struct fastpath_params_worker *lp = app.lcore_params[lcore].worker;
+    struct ethernet_private *private = (struct ethernet_private *)dev->private;
+    struct fastpath_params_worker *lp = &fastpath.lcore_params[lcore].worker;
+
+    port = private->port;
+
+    fastpath_log_debug("ethernet %s prepare to send packet to port %d %d\n",
+        dev->name, port, lp->tx_queue_id[port]);
 
     n_mbufs = lp->mbuf_out[port].n_mbufs;
-
     lp->mbuf_out[port].array[n_mbufs] = m;
     n_mbufs += 1;
 
-    if (n_mbufs < app.burst_size_worker_write) {
+    if (n_mbufs < fastpath.burst_size_worker_write) {
         lp->mbuf_out[port].n_mbufs = n_mbufs;
     } else {
         n_pkts = rte_eth_tx_burst(
@@ -114,42 +121,46 @@ void ethernet_xmit(struct rte_mbuf *m, struct net_device *peer, struct net_devic
     return;
 }
 
-int ethernet_set_vlan(struct net_device *ethernet, struct net_device *vlan)
+int ethernet_set_vlan(struct net_device *ethernet, uint16_t vid, struct net_device *vlan)
 {
     struct ethernet_private *private;
 
     if (vlan == NULL || ethernet == NULL) {
         fastpath_log_error("ethernet_set_vlan: invalid ethernet %p vlan %p\n", 
             ethernet, vlan);
+        return -EINVAL;
+    }
 
-        return -1;
+    if (vid > VLAN_VID_MASK) {
+        fastpath_log_error("ethernet_set_vlan: invalid vid %d\n", vid);
+        return -EINVAL;
     }
 
     private = ethernet->private;
-    private->vlan_dev = vlan;
+    private->vlan_dev[vid] = vlan;
 
     return 0;
 }
 
-int ethernet_init(uint32_t port, uint16_t mode, uint16_t native, uint8_t *map)
+int ethernet_init(uint32_t port, uint16_t mode, uint16_t native)
 {
     struct net_device *dev;
     struct ethernet_private *private;
     
     if (port >= FASTPATH_MAX_NIC_PORTS) {
         fastpath_log_error("ethernet_init: invalid port %d\n", port);
-        return -1;
+        return -EINVAL;
     }
 
     if (ethernet_dev[port] != NULL) {
         fastpath_log_error("ethernet_init: port %d already initialized\n", port);
-        return -1;
+        return -EINVAL;
     }
 
     dev = rte_zmalloc(NULL, sizeof(struct net_device), 0);
     if (dev == NULL) {
         fastpath_log_error("ethernet_init: malloc net_device failed\n");
-        return -1;
+        return -ENOMEM;
     }
 
     private = rte_zmalloc(NULL, sizeof(struct ethernet_private), 0);
@@ -157,12 +168,12 @@ int ethernet_init(uint32_t port, uint16_t mode, uint16_t native, uint8_t *map)
         rte_free(dev);
         
         fastpath_log_error("ethernet_init: malloc net_device failed\n");
-        return -1;
+        return -ENOMEM;
     }
 
     dev->ifindex = 0;
     dev->type = NET_DEVICE_TYPE_ETHERNET;
-    snprintf(dev->name, IFNAMSIZ, "vEth%d", port);
+    snprintf(dev->name, sizeof(dev->name), "vEth%d", port);
 
     private->port = port;
     private->mode = mode;

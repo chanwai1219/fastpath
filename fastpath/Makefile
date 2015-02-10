@@ -48,5 +48,6 @@ SRCS-y := $(shell find $(SRCDIR) -name '*.c')
 
 CFLAGS += -g -O0
 CFLAGS += $(WERROR_FLAGS)
+CFLAGS += -I$(SRCDIR)/include
 
 include $(RTE_SDK)/mk/rte.extapp.mk

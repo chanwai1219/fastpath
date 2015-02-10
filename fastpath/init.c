@@ -103,10 +103,10 @@ fastpath_assign_worker_ids(void)
 	/* Assign ID for each worker */
 	worker_id = 0;
 	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
-		struct fastpath_params_worker *lp_worker = &app.lcore_params[lcore].worker;
+		struct fastpath_params_worker *lp_worker = &fastpath.lcore_params[lcore].worker;
 
-		if (app.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER &&
-            app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX_WORKER) {
+		if (fastpath.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER &&
+            fastpath.lcore_params[lcore].type != e_FASTPATH_LCORE_RX_WORKER) {
 			continue;
 		}
 
@@ -129,7 +129,7 @@ fastpath_init_mbuf_pools(void)
 
 		snprintf(name, sizeof(name), "mbuf_pool_%u", socket);
 		printf("Creating the mbuf pool for socket %u ...\n", socket);
-		app.pools[socket] = rte_mempool_create(
+		fastpath.pools[socket] = rte_mempool_create(
 			name,
 			FASTPATH_DEFAULT_MEMPOOL_BUFFERS,
 			FASTPATH_DEFAULT_MBUF_SIZE,
@@ -139,18 +139,18 @@ fastpath_init_mbuf_pools(void)
 			rte_pktmbuf_init, NULL,
 			socket,
 			0);
-		if (app.pools[socket] == NULL) {
+		if (fastpath.pools[socket] == NULL) {
 			rte_panic("Cannot create mbuf pool on socket %u\n", socket);
 		}
 	}
 
 	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
-		if (app.lcore_params[lcore].type == e_FASTPATH_LCORE_DISABLED) {
+		if (fastpath.lcore_params[lcore].type == e_FASTPATH_LCORE_DISABLED) {
 			continue;
 		}
 
 		socket = rte_lcore_to_socket_id(lcore);
-		app.lcore_params[lcore].pool = app.pools[socket];
+		fastpath.lcore_params[lcore].pool = fastpath.pools[socket];
 	}
 }
 
@@ -170,29 +170,29 @@ fastpath_init_lpm_tables(void)
 
 		snprintf(name, sizeof(name), "lpm_table_%u", socket);
 		printf("Creating the LPM table for socket %u ...\n", socket);
-		app.lpm_tables[socket] = rte_lpm_create(
+		fastpath.lpm_tables[socket] = rte_lpm_create(
 			name,
 			socket,
 			FASTPATH_MAX_LPM_RULES,
 			0);
-		if (app.lpm_tables[socket] == NULL) {
+		if (fastpath.lpm_tables[socket] == NULL) {
 			rte_panic("Unable to create LPM table on socket %u\n", socket);
 		}
 
-		for (rule = 0; rule < app.n_lpm_rules; rule ++) {
+		for (rule = 0; rule < fastpath.n_lpm_rules; rule ++) {
 			int ret;
 
-			ret = rte_lpm_add(app.lpm_tables[socket],
-				app.lpm_rules[rule].ip,
-				app.lpm_rules[rule].depth,
-				app.lpm_rules[rule].if_out);
+			ret = rte_lpm_add(fastpath.lpm_tables[socket],
+				fastpath.lpm_rules[rule].ip,
+				fastpath.lpm_rules[rule].depth,
+				fastpath.lpm_rules[rule].if_out);
 
 			if (ret < 0) {
 				rte_panic("Unable to add entry %u (%x/%u => %u) to the LPM table on socket %u (%d)\n",
 					(unsigned) rule,
-					(unsigned) app.lpm_rules[rule].ip,
-					(unsigned) app.lpm_rules[rule].depth,
-					(unsigned) app.lpm_rules[rule].if_out,
+					(unsigned) fastpath.lpm_rules[rule].ip,
+					(unsigned) fastpath.lpm_rules[rule].depth,
+					(unsigned) fastpath.lpm_rules[rule].if_out,
 					socket,
 					ret);
 			}
@@ -201,12 +201,12 @@ fastpath_init_lpm_tables(void)
 	}
 
 	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
-		if (app.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER) {
+		if (fastpath.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER) {
 			continue;
 		}
 
 		socket = rte_lcore_to_socket_id(lcore);
-		app.lcore_params[lcore].worker.lpm_table = app.lpm_tables[socket];
+		fastpath.lcore_params[lcore].worker.lpm_table = fastpath.lpm_tables[socket];
 	}
 }
 
@@ -217,10 +217,10 @@ fastpath_init_rings(void)
 
 	/* Initialize the rings for the RX side */
 	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
-		struct fastpath_params_rx *lp_rx = &app.lcore_params[lcore].rx;
+		struct fastpath_params_rx *lp_rx = &fastpath.lcore_params[lcore].rx;
 		unsigned socket_rx, lcore_worker;
 
-		if ((app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX) ||
+		if ((fastpath.lcore_params[lcore].type != e_FASTPATH_LCORE_RX) ||
 		    (lp_rx->n_nic_queues == 0)) {
 			continue;
 		}
@@ -229,10 +229,10 @@ fastpath_init_rings(void)
 
 		for (lcore_worker = 0; lcore_worker < FASTPATH_MAX_LCORES; lcore_worker ++) {
 			char name[32];
-			struct fastpath_params_worker *lp_worker = &app.lcore_params[lcore_worker].worker;
+			struct fastpath_params_worker *lp_worker = &fastpath.lcore_params[lcore_worker].worker;
 			struct rte_ring *ring = NULL;
 
-			if (app.lcore_params[lcore_worker].type != e_FASTPATH_LCORE_WORKER) {
+			if (fastpath.lcore_params[lcore_worker].type != e_FASTPATH_LCORE_WORKER) {
 				continue;
 			}
 
@@ -246,7 +246,7 @@ fastpath_init_rings(void)
 				lcore_worker);
 			ring = rte_ring_create(
 				name,
-				app.ring_size,
+				fastpath.ring_size,
 				socket_rx,
 				RING_F_SP_ENQ | RING_F_SC_DEQ);
 			if (ring == NULL) {
@@ -264,9 +264,9 @@ fastpath_init_rings(void)
 	}
 
 	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
-		struct fastpath_params_rx *lp_rx = &app.lcore_params[lcore].rx;
+		struct fastpath_params_rx *lp_rx = &fastpath.lcore_params[lcore].rx;
 
-		if ((app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX) ||
+		if ((fastpath.lcore_params[lcore].type != e_FASTPATH_LCORE_RX) ||
 		    (lp_rx->n_nic_queues == 0)) {
 			continue;
 		}
@@ -277,9 +277,9 @@ fastpath_init_rings(void)
 	}
 
 	for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
-		struct fastpath_params_worker *lp_worker = &app.lcore_params[lcore].worker;
+		struct fastpath_params_worker *lp_worker = &fastpath.lcore_params[lcore].worker;
 
-		if (app.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER) {
+		if (fastpath.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER) {
 			continue;
 		}
 
@@ -383,13 +383,13 @@ fastpath_init_nics(void)
 
 		/* Init RX queues */
 		for (queue = 0; queue < FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT; queue ++) {
-			if (app.nic_rx_queue_mask[port][queue] == 0) {
+			if (fastpath.nic_rx_queue_mask[port][queue] == 0) {
 				continue;
 			}
 
 			fastpath_get_lcore_for_nic_rx(port, queue, &lcore);
 			socket = rte_lcore_to_socket_id(lcore);
-			pool = app.lcore_params[lcore].pool;
+			pool = fastpath.lcore_params[lcore].pool;
 
 			printf("Initializing NIC port %u RX queue %u ...\n",
 				(unsigned) port,
@@ -397,7 +397,7 @@ fastpath_init_nics(void)
 			ret = rte_eth_rx_queue_setup(
 				port,
 				queue,
-				(uint16_t) app.nic_rx_ring_size,
+				(uint16_t) fastpath.nic_rx_ring_size,
 				socket,
 				NULL,
 				pool);
@@ -413,12 +413,12 @@ fastpath_init_nics(void)
 		for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore++) {
             struct fastpath_params_worker *lp_worker;
 
-            if (app.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER &&
-                app.lcore_params[lcore].type != e_FASTPATH_LCORE_RX_WORKER) {
+            if (fastpath.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER &&
+                fastpath.lcore_params[lcore].type != e_FASTPATH_LCORE_RX_WORKER) {
                 continue;
             }
 
-            lp_worker = &app.lcore_params[lcore].worker;
+            lp_worker = &fastpath.lcore_params[lcore].worker;
             queue = lp_worker->tx_queue_id[port] = lp_worker->worker_id;
 			socket = rte_lcore_to_socket_id(lcore);
 			printf("Initializing NIC port %u TX queue %u ...\n",
@@ -426,7 +426,7 @@ fastpath_init_nics(void)
 			ret = rte_eth_tx_queue_setup(
 				port,
 				queue,
-				(uint16_t) app.nic_tx_ring_size,
+				(uint16_t) fastpath.nic_tx_ring_size,
 				socket,
 				NULL);
 			if (ret < 0) {

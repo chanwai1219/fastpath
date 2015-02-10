@@ -31,47 +31,7 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <inttypes.h>
-#include <sys/types.h>
-#include <string.h>
-#include <sys/queue.h>
-#include <stdarg.h>
-#include <errno.h>
-#include <getopt.h>
-
-#include <rte_common.h>
-#include <rte_byteorder.h>
-#include <rte_log.h>
-#include <rte_memory.h>
-#include <rte_memcpy.h>
-#include <rte_memzone.h>
-#include <rte_tailq.h>
-#include <rte_eal.h>
-#include <rte_per_lcore.h>
-#include <rte_launch.h>
-#include <rte_atomic.h>
-#include <rte_cycles.h>
-#include <rte_prefetch.h>
-#include <rte_lcore.h>
-#include <rte_per_lcore.h>
-#include <rte_branch_prediction.h>
-#include <rte_interrupts.h>
-#include <rte_pci.h>
-#include <rte_random.h>
-#include <rte_debug.h>
-#include <rte_ether.h>
-#include <rte_ethdev.h>
-#include <rte_ring.h>
-#include <rte_mempool.h>
-#include <rte_mbuf.h>
-#include <rte_ip.h>
-#include <rte_tcp.h>
-#include <rte_lpm.h>
-
-#include "main.h"
+#include "fastpath.h"
 
 #ifndef FASTPATH_RX_FLUSH
 #define FASTPATH_RX_FLUSH                   1000000
@@ -327,14 +287,14 @@ static void
 fastpath_main_loop_rx(void)
 {
 	uint32_t lcore = rte_lcore_id();
-	struct fastpath_params_rx *lp = &app.lcore_params[lcore].rx;
+	struct fastpath_params_rx *lp = &fastpath.lcore_params[lcore].rx;
 	uint32_t n_workers = fastpath_get_lcores_worker();
 	uint64_t i = 0;
 
-	uint32_t bsz_rx_rd = app.burst_size_rx_read;
-	uint32_t bsz_rx_wr = app.burst_size_rx_write;
+	uint32_t bsz_rx_rd = fastpath.burst_size_rx_read;
+	uint32_t bsz_rx_wr = fastpath.burst_size_rx_write;
 
-	uint8_t pos_lb = app.pos_lb;
+	uint8_t pos_lb = fastpath.pos_lb;
 
 	for ( ; ; ) {
 		if (FASTPATH_RX_FLUSH && (unlikely(i == FASTPATH_RX_FLUSH))) {
@@ -413,10 +373,10 @@ fastpath_worker_flush(struct fastpath_params_worker *lp)
 static void
 fastpath_main_loop_worker(void) {
 	uint32_t lcore = rte_lcore_id();
-	struct fastpath_params_worker *lp = &app.lcore_params[lcore].worker;
+	struct fastpath_params_worker *lp = &fastpath.lcore_params[lcore].worker;
 	uint64_t i = 0;
 
-	uint32_t bsz_rd = app.burst_size_worker_read;
+	uint32_t bsz_rd = fastpath.burst_size_worker_read;
 
 	for ( ; ; ) {
 		if (FASTPATH_WORKER_FLUSH && (unlikely(i == FASTPATH_WORKER_FLUSH))) {
@@ -479,11 +439,11 @@ static void
 fastpath_main_loop_rx_worker(void)
 {
 	uint32_t lcore = rte_lcore_id();
-	struct fastpath_params_rx *lp_rx = &app.lcore_params[lcore].rx;
-    struct fastpath_params_worker *lp_worker = &app.lcore_params[lcore].worker;
+	struct fastpath_params_rx *lp_rx = &fastpath.lcore_params[lcore].rx;
+    struct fastpath_params_worker *lp_worker = &fastpath.lcore_params[lcore].worker;
 	uint64_t i = 0;
 
-	uint32_t bsz_rx_rd = app.burst_size_rx_read;
+	uint32_t bsz_rx_rd = fastpath.burst_size_rx_read;
 
 	for ( ; ; ) {
 		if (FASTPATH_WORKER_FLUSH && (unlikely(i == FASTPATH_WORKER_FLUSH))) {
@@ -507,7 +467,7 @@ fastpath_main_loop(__attribute__((unused)) void *arg)
 	unsigned lcore;
 
 	lcore = rte_lcore_id();
-	lp = &app.lcore_params[lcore];
+	lp = &fastpath.lcore_params[lcore];
 
 	if (lp->type == e_FASTPATH_LCORE_RX) {
 		printf("Logical core %u (RX) main loop.\n", lcore);
