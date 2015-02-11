@@ -10,11 +10,11 @@ struct interface_private {
     uint16_t ifindex;
     uint8_t state;
     uint8_t reserved;
-    struct net_device *ipfwd;
-    struct net_device *bridge;
+    struct module *ipfwd;
+    struct module *bridge;
 };
 
-struct net_device *interface_dev[INTERFACE_INDEX_MAX];
+struct module *interface_modules[INTERFACE_INDEX_MAX];
 
 static inline int
 is_valid_ipv4_pkt(struct ipv4_hdr *pkt, uint32_t link_len)
@@ -56,7 +56,7 @@ is_valid_ipv4_pkt(struct ipv4_hdr *pkt, uint32_t link_len)
 }
 
 void interface_receive(struct rte_mbuf *m, 
-    __rte_unused struct net_device *peer, struct net_device *dev)
+    __rte_unused struct module *peer, struct module *iface)
 {
     uint64_t cur_tsc = rte_rdtsc();
     struct ipv4_hdr *ipv4_hdr;
@@ -65,7 +65,7 @@ void interface_receive(struct rte_mbuf *m,
     struct rte_ip_frag_tbl *tbl;
     struct rte_ip_frag_death_row *dr;
 
-    private = (struct interface_private *)dev->private;
+    private = (struct interface_private *)iface->private;
 
     if (m->ol_flags & (PKT_RX_IPV4_HDR)) {
         ipv4_hdr = rte_pktmbuf_mtod(m, struct ipv4_hdr *);
@@ -128,19 +128,19 @@ void interface_receive(struct rte_mbuf *m,
         }
     }
 
-    SEND_PKT(m, dev, private->ipfwd);
+    SEND_PKT(m, iface, private->ipfwd);
 }
 
 void interface_xmit(struct rte_mbuf *m, 
-    __rte_unused struct net_device *peer, struct net_device *dev)
+    __rte_unused struct module *peer, struct module *iface)
 {
     int32_t i, n_frags;
     int socketid = rte_socket_id();
     struct rte_mbuf *pkts_out[MAX_FRAG_NUM];
-    struct interface_private *private = (struct interface_private *)dev->private;
+    struct interface_private *private = (struct interface_private *)iface->private;
 
     if (private->state == INTERFACE_LINK_DOWN) {
-        fastpath_log_debug("interface_xmit: interface %s link down\n", dev->name);
+        fastpath_log_debug("interface_xmit: interface %s link down\n", iface->name);
         rte_pktmbuf_free(m);
         return;
     }
@@ -148,7 +148,7 @@ void interface_xmit(struct rte_mbuf *m,
     if (m->ol_flags & PKT_RX_IPV4_HDR) {
         /* if we don't need to do any fragmentation */
         if (likely (IPV4_MTU_DEFAULT >= m->pkt_len)) {
-            SEND_PKT(m, dev, private->bridge);
+            SEND_PKT(m, iface, private->bridge);
         } else {
             n_frags = rte_ipv4_fragment_packet(m,
                 &pkts_out[0],
@@ -164,13 +164,13 @@ void interface_xmit(struct rte_mbuf *m,
                 return;
 
             for (i = 0; i < n_frags; i++) {
-                SEND_PKT(pkts_out[i], dev, private->bridge);
+                SEND_PKT(pkts_out[i], iface, private->bridge);
             }
         }
     } else if (m->ol_flags & PKT_RX_IPV6_HDR) {
         /* if we don't need to do any fragmentation */
         if (likely (IPV6_MTU_DEFAULT >= m->pkt_len)) {
-            SEND_PKT(m, dev, private->bridge);
+            SEND_PKT(m, iface, private->bridge);
         } else {
             n_frags = rte_ipv6_fragment_packet(m,
                 &pkts_out[0],
@@ -186,7 +186,7 @@ void interface_xmit(struct rte_mbuf *m,
                 return;
 
             for (i = 0; i < n_frags; i++) {
-                SEND_PKT(pkts_out[i], dev, private->bridge);
+                SEND_PKT(pkts_out[i], iface, private->bridge);
             }
         }
     }
@@ -194,7 +194,7 @@ void interface_xmit(struct rte_mbuf *m,
 
 int interface_init(uint16_t ifidx)
 {
-    struct net_device *dev;
+    struct module *iface;
     struct interface_private *private;
 
     if (ifidx >= INTERFACE_INDEX_MAX) {
@@ -202,30 +202,30 @@ int interface_init(uint16_t ifidx)
         return -EINVAL;
     }
 
-    dev = rte_zmalloc(NULL, sizeof(struct net_device), 0);
-    if (dev == NULL) {
-        fastpath_log_error("interface_init: malloc net_device failed\n");
+    iface = rte_zmalloc(NULL, sizeof(struct module), 0);
+    if (iface == NULL) {
+        fastpath_log_error("interface_init: malloc module failed\n");
         return -ENOMEM;
     }
 
     private = rte_zmalloc(NULL, sizeof(struct interface_private), 0);
     if (private == NULL) {
-        rte_free(dev);
+        rte_free(iface);
         
         fastpath_log_error("interface_init: malloc interface_private failed\n");
         return -ENOMEM;
     }
 
-    dev->ifindex = 0;
-    dev->type = NET_DEVICE_TYPE_INTERFACE;
-    snprintf(dev->name, sizeof(dev->name), "eif%d", ifidx);
+    iface->ifindex = 0;
+    iface->type = MODULE_TYPE_INTERFACE;
+    snprintf(iface->name, sizeof(iface->name), "eif%d", ifidx);
 
     private->ifindex = ifidx;
     private->state = INTERFACE_LINK_UP;
 
-    dev->private = (void *)private;
+    iface->private = (void *)private;
 
-    interface_dev[ifidx] = dev;
+    interface_modules[ifidx] = iface;
 
     return 0;    
 }

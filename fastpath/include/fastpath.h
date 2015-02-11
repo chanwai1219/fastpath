@@ -56,16 +56,11 @@
 #include <rte_tcp.h>
 #include <rte_lpm.h>
 #include <rte_string_fns.h>
+#include <rte_spinlock.h>
 
 #include "main.h"
-#include "netdevice.h"
 #include "log.h"
 #include "utils.h"
-
-#include "ethernet.h"
-#include "vlan.h"
-#include "bridge.h"
-#include "interface.h"
 
 #define MAC_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
 #define MAC_ARG(x) ((u8*)(x))[0],((u8*)(x))[1],((u8*)(x))[2],((u8*)(x))[3],((u8*)(x))[4],((u8*)(x))[5]
@@ -101,6 +96,22 @@
 #error "Please fix asm/byteorder.h"
 #endif /* __LITTLE_ENDIAN */
 
+enum {
+    MODULE_TYPE_ETHERNET,
+    MODULE_TYPE_VLAN,
+    MODULE_TYPE_BRIDGE,
+    MODULE_TYPE_INTERFACE,
+};
+
+struct module {
+#define NAME_SIZE   16
+    char name[NAME_SIZE];
+    uint16_t ifindex;
+    uint16_t type;
+    void (*receive)(struct rte_mbuf *m, struct module *peer, struct module *local);
+    void (*transmit)(struct rte_mbuf *m, struct module *peer, struct module *local);
+    void *private;
+};
 
 #define SEND_PKT(m, local, peer) do { \
         if (unlikely((peer) == NULL)) { \
@@ -115,6 +126,11 @@
             } \
         } \
     } while (0)
+
+#include "ethernet.h"
+#include "vlan.h"
+#include "bridge.h"
+#include "interface.h"
 
 #endif /* __FASTPATH_H__ */
 

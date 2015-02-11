@@ -2,67 +2,67 @@
 #include "fastpath.h"
 #include "vlan.h"
 
-struct net_device *vlan_dev[FASTPATH_MAX_NIC_PORTS];
-
 struct vlan_private {
-    uint16_t port;
     uint16_t vid;
-    struct net_device *ethernet_dev;
-    struct net_device *bridge_dev;
+    uint16_t reserved;
+    struct module *ethernet;
+    struct module *bridge;
 };
 
-void vlan_receive(struct rte_mbuf *m, __rte_unused struct net_device *peer, struct net_device *dev)
+struct module *vlan_modules[VLAN_VID_MAX];
+
+void vlan_receive(struct rte_mbuf *m, __rte_unused struct module *peer, struct module *vlan)
 {
-    struct vlan_private *private = (struct vlan_private *)dev->private;
+    struct vlan_private *private = (struct vlan_private *)vlan->private;
 
     rte_pktmbuf_adj(m, (uint16_t)sizeof(struct vlan_hdr));
     memmove(rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr), 
         rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr) - sizeof(struct vlan_hdr), 
         2 * sizeof(struct ether_addr));
 
-    SEND_PKT(m, dev, private->bridge_dev);
+    SEND_PKT(m, vlan, private->bridge);
     
     return;
 }
 
-void vlan_xmit(struct rte_mbuf *m, __rte_unused struct net_device *peer, struct net_device *dev)
+void vlan_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct module *vlan)
 {
-    struct ether_hdr *eth;
+    struct ether_hdr *eth_hdr;
     struct vlan_hdr  *vlan_hdr;
-    struct vlan_private *private = (struct vlan_private *)dev->private;
+    struct vlan_private *private = (struct vlan_private *)vlan->private;
     
     rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct vlan_hdr));
     memmove(rte_pktmbuf_mtod(m, void *), 
         rte_pktmbuf_mtod(m, char *) + sizeof(struct vlan_hdr), 
         2 * sizeof(struct ether_addr));
-    eth = rte_pktmbuf_mtod(m, struct ether_hdr *);
-    vlan_hdr = (struct vlan_hdr *)(eth + 1);
+    eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
+    vlan_hdr = (struct vlan_hdr *)(eth_hdr + 1);
     vlan_hdr->vlan_tci = rte_cpu_to_be_16(private->vid);
     vlan_hdr->eth_proto = rte_cpu_to_be_16(ETHER_TYPE_VLAN);    
     
-    SEND_PKT(m, dev, private->ethernet_dev);
+    SEND_PKT(m, vlan, private->ethernet);
     
     return;
 }
 
-int vlan_set_ethernet(struct net_device *vlan, struct net_device *ethernet)
+int vlan_set_ethernet(struct module *vlan, struct module *eth)
 {
     struct vlan_private *private;
 
-    if (vlan == NULL || ethernet == NULL) {
+    if (vlan == NULL || eth == NULL) {
         fastpath_log_error("vlan_set_ethernet: invalid vlan %p ethernet %p\n", 
-            vlan, ethernet);
+            vlan, eth);
 
         return -EINVAL;
     }
     
     private = (struct vlan_private *)vlan->private;
-    private->ethernet_dev = ethernet;
+    private->ethernet = eth;
 
     return 0;
 }
 
-int vlan_set_bridge(struct net_device *vlan, struct net_device *br)
+int vlan_set_bridge(struct module *vlan, struct module *br)
 {
     struct vlan_private *private;
 
@@ -74,45 +74,44 @@ int vlan_set_bridge(struct net_device *vlan, struct net_device *br)
     }
     
     private = (struct vlan_private *)vlan->private;
-    private->bridge_dev = br;
+    private->bridge = br;
 
     return 0;
 }
 
-int vlan_init(uint16_t port, uint16_t vid)
+int vlan_init(uint16_t vid)
 {
-    struct net_device *dev;
+    struct module *vlan;
     struct vlan_private *private;
-    
-    if (port >= FASTPATH_MAX_NIC_PORTS) {
-        fastpath_log_error("vlan_init: invalid port %d\n", port);
-        return -1;
-    }
 
-    dev = rte_zmalloc(NULL, sizeof(struct net_device), 0);
-    if (dev == NULL) {
-        fastpath_log_error("vlan_init: malloc net_device failed\n");
+    if (vid > VLAN_VID_MASK) {
+        fastpath_log_error("vlan_init: invalid vid %d\n", vid);
+        return -EINVAL;
+    }
+    
+    vlan = rte_zmalloc(NULL, sizeof(struct module), 0);
+    if (vlan == NULL) {
+        fastpath_log_error("vlan_init: malloc module failed\n");
         return -ENOMEM;
     }
 
     private = rte_zmalloc(NULL, sizeof(struct vlan_private), 0);
     if (private == NULL) {
-        rte_free(dev);
+        rte_free(vlan);
         
-        fastpath_log_error("vlan_init: malloc net_device failed\n");
+        fastpath_log_error("vlan_init: malloc module failed\n");
         return -ENOMEM;
     }
 
-    dev->ifindex = 0;
-    dev->type = NET_DEVICE_TYPE_VLAN;
-    snprintf(dev->name, sizeof(dev->name), "vlan%d", vid);
+    vlan->ifindex = 0;
+    vlan->type = MODULE_TYPE_VLAN;
+    snprintf(vlan->name, sizeof(vlan->name), "vlan%d", vid);
     
-    private->port = port;
     private->vid = vid;
     
-    dev->private = (void *)private;
+    vlan->private = (void *)private;
 
-    vlan_dev[port] = dev;
+    vlan_modules[vid] = vlan;
 
     return 0;
 }
