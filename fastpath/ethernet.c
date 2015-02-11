@@ -5,7 +5,7 @@ struct ethernet_private {
     uint16_t port;
     uint16_t mode;
     uint16_t native;
-    uint16_t reserved;
+    uint16_t state;
     struct module *vlan[VLAN_VID_MAX];
     struct module *bridge;
 };
@@ -48,7 +48,8 @@ void ethernet_receive(struct rte_mbuf *m, __rte_unused struct module *peer, stru
     struct vlan_hdr  *vlan_hdr;
     struct ethernet_private *private = (struct ethernet_private *)eth->private;
 
-    fastpath_log_debug("ethernet %s receive packet\n", eth->name);
+    fastpath_log_debug("lcore %d ethernet %s receive packet segments %d length %d\n", 
+        rte_lcore_id(), eth->name, m->nb_segs, m->pkt_len);
 
     eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
     rte_pktmbuf_adj(m, (uint16_t)sizeof(struct ether_hdr));
@@ -65,7 +66,7 @@ void ethernet_receive(struct rte_mbuf *m, __rte_unused struct module *peer, stru
         } else {
             fastpath_log_debug("trunk vlan %s receive packet vid %x\n", eth->name, vid);
 
-            SEND_PKT(m, eth, private->vlan[vid]);
+            SEND_PKT(m, eth, private->vlan[vid], PKT_DIR_RECV);
         }
     } else {
         if (private->mode == VLAN_MODE_ACCESS) {
@@ -75,7 +76,7 @@ void ethernet_receive(struct rte_mbuf *m, __rte_unused struct module *peer, stru
             fastpath_log_debug("trunk vlan %s receive untagged packet, send to %d\n",
                 eth->name, private->native);
         }
-        SEND_PKT(m, eth, private->bridge);
+        SEND_PKT(m, eth, private->bridge, PKT_DIR_RECV);
     }
 
     return;
@@ -90,8 +91,33 @@ void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct 
 
     port = private->port;
 
-    fastpath_log_debug("ethernet %s prepare to send packet to port %d %d\n",
-        eth->name, port, lp->tx_queue_id[port]);
+    fastpath_log_debug("ethernet %s prepare to send packet to port %d %d pkt len %d\n",
+        eth->name, port, lp->tx_queue_id[port], m->pkt_len);
+
+    if (private->state == 0) {
+        fastpath_log_debug("ethernet %s link down\n", eth->name);
+        rte_pktmbuf_free(m);
+        return;
+    }
+
+    {
+        int i, len = m->buf_len;
+        uint8_t* ptr = rte_pktmbuf_mtod(m, uint8_t *);
+
+        printf("seg %d len %d\r\n%p: ", m->nb_segs ,len, (uint8_t*)ptr);
+        
+        for (i = 0; i < len; i++) {
+            printf("%02x", ((uint8_t*)ptr)[i]);
+            if (i % 2)
+                printf(" ");
+            if (15 == i % 16)
+            {
+                printf("\r\n");
+                if (i + 1 < len)
+                    printf("%p: ", (uint8_t*)ptr + i + 1);
+            }
+        }
+    }
 
     n_mbufs = lp->mbuf_out[port].n_mbufs;
     lp->mbuf_out[port].array[n_mbufs] = m;
@@ -121,46 +147,58 @@ void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct 
     return;
 }
 
-int ethernet_set_vlan(struct module *ethernet, uint16_t vid, struct module *vlan)
+int ethernet_connect(struct module *local, struct module *peer, void *param)
 {
     struct ethernet_private *private;
 
-    if (vlan == NULL || ethernet == NULL) {
-        fastpath_log_error("ethernet_set_vlan: invalid ethernet %p vlan %p\n", 
-            ethernet, vlan);
+    if (local == NULL || peer == NULL) {
+        fastpath_log_error("ethernet_connect: invalid local %p peer %p\n", 
+            local, peer);
         return -EINVAL;
     }
+    
+    fastpath_log_info("ethernet_connect: local %s peer %s\n", local->name, peer->name);
 
-    if (vid > VLAN_VID_MASK) {
-        fastpath_log_error("ethernet_set_vlan: invalid vid %d\n", vid);
-        return -EINVAL;
+    private = local->private;
+    
+    if (peer->type == MODULE_TYPE_VLAN) {
+        uint16_t vid = *(uint16_t *)param;
+        if (vid > VLAN_VID_MASK) {
+            fastpath_log_error("ethernet_connect: invalid vid %d\n", vid);
+            return -EINVAL;
+        }
+
+        private->vlan[vid] = peer;
+    } else if (peer->type == MODULE_TYPE_BRIDGE) {
+        private->bridge = peer;
+    } else {
+        fastpath_log_error("ethernet_connect: invalid peer type %d\n", peer->type);
+        return -ENOENT;
     }
-
-    private = ethernet->private;
-    private->vlan[vid] = vlan;
 
     return 0;
 }
 
-int ethernet_init(uint32_t port, uint16_t mode, uint16_t native)
+struct module * ethernet_init(uint32_t port, uint16_t mode, uint16_t native)
 {
     struct module *eth;
     struct ethernet_private *private;
+    struct rte_eth_link link;
     
     if (port >= FASTPATH_MAX_NIC_PORTS) {
         fastpath_log_error("ethernet_init: invalid port %d\n", port);
-        return -EINVAL;
+        return NULL;
     }
 
     if (ethernet_modules[port] != NULL) {
         fastpath_log_error("ethernet_init: port %d already initialized\n", port);
-        return -EINVAL;
+        return NULL;
     }
 
     eth = rte_zmalloc(NULL, sizeof(struct module), 0);
     if (eth == NULL) {
         fastpath_log_error("ethernet_init: malloc module failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
     private = rte_zmalloc(NULL, sizeof(struct ethernet_private), 0);
@@ -168,20 +206,29 @@ int ethernet_init(uint32_t port, uint16_t mode, uint16_t native)
         rte_free(eth);
         
         fastpath_log_error("ethernet_init: malloc module failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
-    eth->ifindex = 0;
+    eth->receive = ethernet_receive;
+    eth->transmit = ethernet_xmit;
+    eth->connect = ethernet_connect;
     eth->type = MODULE_TYPE_ETHERNET;
     snprintf(eth->name, sizeof(eth->name), "vEth%d", port);
 
     private->port = port;
     private->mode = mode;
     private->native = native;
+
+    rte_eth_link_get_nowait(port, &link);
+    
+    private->state = link.link_status;
     
     eth->private = (void *)private;
 
     ethernet_modules[port] = eth;
 
-    return 0;
+    fastpath_log_info("ethernet_init: port %d mode %d native %d link %d\n", 
+        port, mode, native, link.link_status);
+
+    return eth;
 }

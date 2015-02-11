@@ -89,7 +89,7 @@
  * in a production build.
  */
 #ifndef LOG_LEVEL
-#define LOG_LEVEL	LOG_LEVEL_INFO
+#define LOG_LEVEL	LOG_LEVEL_ALL
 #endif
 
 /* Conditionally generate code for fastpath_log_<LEVEL>() functions, depending on

@@ -64,7 +64,8 @@
 #include "utils.h"
 
 #define MAC_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
-#define MAC_ARG(x) ((u8*)(x))[0],((u8*)(x))[1],((u8*)(x))[2],((u8*)(x))[3],((u8*)(x))[4],((u8*)(x))[5]
+#define MAC_ARG(x) ((uint8_t*)(x))[0],((uint8_t*)(x))[1],((uint8_t*)(x))[2], \
+    ((uint8_t*)(x))[3],((uint8_t*)(x))[4],((uint8_t*)(x))[5]
 
 #define NIPQUAD(addr) \
     ((unsigned char *)&addr)[0], \
@@ -74,14 +75,14 @@
 #define NIPQUAD_FMT "%u.%u.%u.%u"
 
 #define NIP6(addr) \
-    ntohs((addr).s6_addr16[0]), \
-    ntohs((addr).s6_addr16[1]), \
-    ntohs((addr).s6_addr16[2]), \
-    ntohs((addr).s6_addr16[3]), \
-    ntohs((addr).s6_addr16[4]), \
-    ntohs((addr).s6_addr16[5]), \
-    ntohs((addr).s6_addr16[6]), \
-    ntohs((addr).s6_addr16[7])
+    ntohs((addr)[0]), \
+    ntohs((addr)[1]), \
+    ntohs((addr)[2]), \
+    ntohs((addr)[3]), \
+    ntohs((addr)[4]), \
+    ntohs((addr)[5]), \
+    ntohs((addr)[6]), \
+    ntohs((addr)[7])
 #define NIP6_FMT "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x"
 #define NIP6_SEQFMT "%04x%04x%04x%04x%04x%04x%04x%04x"
 
@@ -108,24 +109,38 @@ enum {
 struct module {
 #define NAME_SIZE   16
     char name[NAME_SIZE];
-    uint16_t ifindex;
     uint16_t type;
+    int (*connect)(struct module *local, struct module *peer, void *param);
     void (*receive)(struct rte_mbuf *m, struct module *peer, struct module *local);
     void (*transmit)(struct rte_mbuf *m, struct module *peer, struct module *local);
     void *private;
 };
 
-#define SEND_PKT(m, local, peer) do { \
+enum {
+    PKT_DIR_RECV,
+    PKT_DIR_XMIT,
+};
+
+#define SEND_PKT(m, local, peer, dir) do { \
         if (unlikely((peer) == NULL)) { \
-            fastpath_log_error("%s: peer not valid\n", __func__); \
+            fastpath_log_error("%s: local %s peer not valid\n", __func__, local->name); \
             rte_pktmbuf_free((m)); \
         } else { \
-            if (unlikely((peer)->receive == NULL)) { \
-                fastpath_log_error("%s: peer receive not valid\n", __func__); \
-                rte_pktmbuf_free((m)); \
+            if (dir == PKT_DIR_RECV) { \
+                if (unlikely((peer)->receive == NULL)) { \
+                    fastpath_log_error("%s: local %s peer receive not valid\n", __func__, local->name); \
+                    rte_pktmbuf_free((m)); \
+                } else { \
+                    (peer)->receive((m), (local), (peer)); \
+                } \
             } else { \
-                (peer)->receive((m), (local), (peer)); \
-            } \
+                if (unlikely((peer)->transmit == NULL)) { \
+                    fastpath_log_error("%s: local %s peer transmit not valid\n", __func__, local->name); \
+                    rte_pktmbuf_free((m)); \
+                } else { \
+                    (peer)->transmit((m), (local), (peer)); \
+                } \
+            }\
         } \
     } while (0)
 

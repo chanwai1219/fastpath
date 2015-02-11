@@ -20,7 +20,7 @@ void vlan_receive(struct rte_mbuf *m, __rte_unused struct module *peer, struct m
         rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr) - sizeof(struct vlan_hdr), 
         2 * sizeof(struct ether_addr));
 
-    SEND_PKT(m, vlan, private->bridge);
+    SEND_PKT(m, vlan, private->bridge, PKT_DIR_RECV);
     
     return;
 }
@@ -40,7 +40,7 @@ void vlan_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct modu
     vlan_hdr->vlan_tci = rte_cpu_to_be_16(private->vid);
     vlan_hdr->eth_proto = rte_cpu_to_be_16(ETHER_TYPE_VLAN);    
     
-    SEND_PKT(m, vlan, private->ethernet);
+    SEND_PKT(m, vlan, private->ethernet, PKT_DIR_XMIT);
     
     return;
 }
@@ -103,7 +103,6 @@ int vlan_init(uint16_t vid)
         return -ENOMEM;
     }
 
-    vlan->ifindex = 0;
     vlan->type = MODULE_TYPE_VLAN;
     snprintf(vlan->name, sizeof(vlan->name), "vlan%d", vid);
     

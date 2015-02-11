@@ -96,16 +96,21 @@ static void bridge_flood(struct rte_mbuf *m, struct module *br, uint8_t input)
     struct bridge_private *private = (struct bridge_private *)br->private;
 
     clone_num = private->port_num;
-
     use_clone = (private->port_num <= FASTPATH_CLONE_PORTS 
         && m->nb_segs <= FASTPATH_CLONE_SEGS);
+
+    printf("%s: clone %d use clone %d\n", __func__, clone_num, use_clone);
+
+    rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct ether_hdr));
 
     for (i = 0; i < BRIDGE_MAX_PORTS; i++) {
         if (i != input && private->port[i] != NULL) {
             if (clone_num > 1) {
                 if (likely((mc = bridge_out_pkt(m, use_clone)) != NULL)) {
-                    SEND_PKT(mc, br, private->port[i]);
+                    printf("%s %d\n", __func__, __LINE__);
+                    SEND_PKT(mc, br, private->port[i], PKT_DIR_XMIT);
                 } else if (use_clone == 0) {
+                    fastpath_log_error("bridge_flood: clone mbuf failed\n");
                     rte_pktmbuf_free(m);
                     return;
                 }
@@ -113,19 +118,22 @@ static void bridge_flood(struct rte_mbuf *m, struct module *br, uint8_t input)
                 /* last pkt */
                 if (use_clone != 0) {
                     if (input == BRIDGE_MAX_PORTS) {
-                        SEND_PKT(m, br, private->interface);
+                        printf("%s %d\n", __func__, __LINE__);
+                        SEND_PKT(m, br, private->interface, PKT_DIR_RECV);
                     } else {
-                        SEND_PKT(m, br, private->port[i]);
+                        printf("%s %d\n", __func__, __LINE__);
+                        SEND_PKT(m, br, private->port[i], PKT_DIR_XMIT);
                     }
                 } else {
+                    printf("%s %d\n", __func__, __LINE__);
                     rte_pktmbuf_free(m);
                 }
 
                 break;
             }
-        }
 
-        clone_num--;
+            clone_num--;
+        }
     }
 
     return;
@@ -149,11 +157,11 @@ void bridge_receive(struct rte_mbuf *m,
         return;
     }
 
-    fastpath_log_debug("bridge %s receive packet "MAC_FMT" ==> "MAC_FMT" from %d\n",
-        MAC_ARG(&eth_hdr->s_addr), MAC_ARG(&eth_hdr->d_addr), port);
+    fastpath_log_debug("bridge %s receive packet "MAC_FMT" ==> "MAC_FMT" from port %d\n",
+        br->name, MAC_ARG(&eth_hdr->s_addr), MAC_ARG(&eth_hdr->d_addr), port);
     
     if (!is_valid_assigned_ether_addr(&eth_hdr->s_addr)) {
-        fastpath_log_error("bridge %s receive invalid packet\n", br->name);
+        fastpath_log_error("bridge %s receive invalid packet, drop\n", br->name);
         rte_pktmbuf_free(m);
         return;
     }
@@ -171,9 +179,9 @@ void bridge_receive(struct rte_mbuf *m,
         }
     } else {
         if (entry->flag & BRIDGE_FDB_FLAG_LOCAL) {
-            SEND_PKT(m, br, private->interface);
+            SEND_PKT(m, br, private->interface, PKT_DIR_RECV);
         } else {
-            SEND_PKT(m, br, private->port[entry->port]);
+            SEND_PKT(m, br, private->port[entry->port], PKT_DIR_XMIT);
         }
     }
 }
@@ -194,7 +202,7 @@ void bridge_xmit(struct rte_mbuf *m,
             return;
         }
 
-        SEND_PKT(m, br, private->port[entry->port]);
+        SEND_PKT(m, br, private->port[entry->port], PKT_DIR_RECV);
     }
 }
 
@@ -240,6 +248,8 @@ int bridge_fdb_update(struct module *br,
     entry = bridge_fdb_lookup(br, addr);
     if (entry != NULL) {
         if (entry->port != port) {
+            fastpath_log_debug("update "MAC_FMT" port to %d old %d\n",
+                MAC_ARG(addr), port, entry->port);
             entry->port = port;
         }
 
@@ -277,7 +287,6 @@ void bridge_fdb_init(struct module *br)
 {
     char s[64];
     int socketid;
-    unsigned lcore_id;
     struct bridge_private *private = (struct bridge_private *)br->private;
 
     struct rte_hash_parameters bridge_hash_params = {
@@ -288,8 +297,10 @@ void bridge_fdb_init(struct module *br)
         .hash_func_init_val = 0,
     };
     
-    for (lcore_id = 0; lcore_id < FASTPATH_MAX_LCORES; lcore_id++) {
-        socketid = rte_lcore_to_socket_id(lcore_id);
+    for (socketid = 0; socketid < FASTPATH_MAX_SOCKETS; socketid++) {
+        if (fastpath_is_socket_used(socketid) == 0) {
+            continue;
+        }
 
         if (private->bridge_hash_tbl[socketid] != NULL) {
             continue;
@@ -312,72 +323,60 @@ void bridge_fdb_init(struct module *br)
     return;
 }
 
-int bridge_add_if(struct module *br, struct module *port)
+int bridge_connect(struct module *local, struct module *peer, void *param)
 {
-    uint32_t i;
-    struct bridge_private *private = (struct bridge_private *)br->private;
+    struct bridge_private *private;
+
+    if (local == NULL || peer == NULL) {
+        fastpath_log_error("bridge_connect: invalid local %p peer %p\n", 
+            local, peer);
+        return -EINVAL;
+    }
     
-    if (port->type != MODULE_TYPE_ETHERNET && port->type != MODULE_TYPE_VLAN) {
-        fastpath_log_error("bridge_add_if: add port type %d failed\n", port->type);
-        return -EINVAL;
-    }
+    fastpath_log_info("bridge_connect: local %s peer %s\n", local->name, peer->name);
 
-    for (i = 0; i < BRIDGE_MAX_PORTS; i++) {
-        if (private->port[i] != NULL) {
-            break;
+    private = local->private;
+    
+    if (peer->type == MODULE_TYPE_VLAN) {
+        
+    } else if (peer->type == MODULE_TYPE_ETHERNET) {
+        uint16_t port = *(uint16_t *)param;
+        if (port >= BRIDGE_MAX_PORTS) {
+            fastpath_log_error("bridge_connect: invalid port %d\n", port);
+            return -EINVAL;
         }
-    }
-    if (i == BRIDGE_MAX_PORTS) {
-        fastpath_log_error("bridge_add_if: bridge %s already has %d ports\n", port->name, i);
-        return -EINVAL;
-    }
 
-    private->port[i] = port;
-    private->port_num += 1;
+        fastpath_log_info("bridge_connect: bridge %s add port %d %s\n", 
+            local->name, port, peer->name);
+        
+        private->port[port] = peer;
+        private->port_num += 1;
 
-    fastpath_log_info("bridge %s add port %s index %d\n", br->name, port->name, i);
-
-    return 0;
-}
-
-int bridge_del_if(struct module *br, struct module *port)
-{
-    uint32_t i;
-    struct bridge_private *private = (struct bridge_private *)br->private;
-
-    for (i = 0; i < BRIDGE_MAX_PORTS; i++) {
-        if (private->port[i] == port) {
-            break;
-        }
-    }
-
-    if (i == BRIDGE_MAX_PORTS) {
-        fastpath_log_error("bridge_del_if: delete %s from %s failed\n", port->name, br->name);
+        peer->connect(peer, local, NULL);
+    } else {
+        fastpath_log_error("bridge_connect: invalid peer type %d\n", peer->type);
         return -ENOENT;
     }
-    
-    private->port[i] = NULL;
-    private->port_num -= 1;
-
-    fastpath_log_info("bridge %s delete port %s index %d\n", br->name, port->name, i);
 
     return 0;
 }
 
-int bridge_init(uint16_t vid)
+struct module * bridge_init(uint16_t vid)
 {
     struct module *br;
     struct bridge_private *private;
     
     if (vid > VLAN_VID_MASK) {
         fastpath_log_error("bridge_init: bridge %d already initialized\n", vid);
-        return -EINVAL;
+        return NULL;
     }
+
+    fastpath_log_info("bridge_init: vlan %d\n", vid);
 
     br = rte_zmalloc(NULL, sizeof(struct module), 0);
     if (br == NULL) {
         fastpath_log_error("bridge_init: malloc module failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
     private = rte_zmalloc(NULL, sizeof(struct bridge_private), 0);
@@ -385,23 +384,25 @@ int bridge_init(uint16_t vid)
         rte_free(br);
         
         fastpath_log_error("bridge_init: malloc bridge_private failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
-    br->ifindex = 0;
+    br->receive = bridge_receive;
+    br->transmit = bridge_xmit;
+    br->connect = bridge_connect;
     br->type = MODULE_TYPE_BRIDGE;
     snprintf(br->name, sizeof(br->name), "br%d", vid);
     
     private->vid = vid;
     private->port_num = 0;
-    
-    bridge_fdb_init(br);
-    
+        
     br->private = (void *)private;
+
+    bridge_fdb_init(br);
 
     bridge_dev[vid] = br;
 
-    return 0;
+    return br;
 }
 
 int bridge_fini(void)

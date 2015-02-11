@@ -59,8 +59,8 @@ main(int argc, char **argv)
 	fastpath_init();
 	fastpath_print_params();
 
-	/* Launch per-lcore init on every lcore */
-	rte_eal_mp_remote_launch(fastpath_main_loop, NULL, CALL_MASTER);
+	/* Launch per-lcore init on every slave lcore */
+	rte_eal_mp_remote_launch(fastpath_main_loop, NULL, SKIP_MASTER);
 	RTE_LCORE_FOREACH_SLAVE(lcore) {
 		if (rte_eal_wait_lcore(lcore) < 0) {
 			return -1;

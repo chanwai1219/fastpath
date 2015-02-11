@@ -367,6 +367,9 @@ int fastpath_get_lcore_for_nic_tx(uint8_t port, uint32_t *lcore_out);
 int fastpath_is_socket_used(uint32_t socket);
 uint32_t fastpath_get_lcores_rx(void);
 uint32_t fastpath_get_lcores_worker(void);
+uint32_t fastpath_get_lcores_rx_worker(void);
 void fastpath_print_params(void);
+
+void setup(void);
 
 #endif /* _MAIN_H_ */

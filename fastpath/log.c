@@ -172,11 +172,11 @@ fastpath_log(int level, const char *file, long line,
 
 	/* Log to file if enabled */
 	if (log_file != NULL)
-		fprintf(log_file, "%s\n", fastpath_format_msg_file(curr_msg));
+		fprintf(log_file, "%s", fastpath_format_msg_file(curr_msg));
 
 	/* Print message to screen if its level is high enough. */
 	if (level >= log_level_screen)
-		fprintf(stdout, "%s\n", fastpath_format_msg_stdout(curr_msg));
+		fprintf(stdout, "%s", fastpath_format_msg_stdout(curr_msg));
 
 	log_history.need_refresh = 1;
 

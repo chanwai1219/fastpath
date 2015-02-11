@@ -166,63 +166,6 @@ fastpath_init_indirect_mbuf_pools(void)
     }
 }
 
-
-static void
-fastpath_init_lpm_tables(void)
-{
-    unsigned socket, lcore;
-
-    /* Init the LPM tables */
-    for (socket = 0; socket < FASTPATH_MAX_SOCKETS; socket ++) {
-        char name[32];
-        uint32_t rule;
-
-        if (fastpath_is_socket_used(socket) == 0) {
-            continue;
-        }
-
-        snprintf(name, sizeof(name), "lpm_table_%u", socket);
-        printf("Creating the LPM table for socket %u ...\n", socket);
-        fastpath.lpm_tables[socket] = rte_lpm_create(
-            name,
-            socket,
-            FASTPATH_MAX_LPM_RULES,
-            0);
-        if (fastpath.lpm_tables[socket] == NULL) {
-            rte_panic("Unable to create LPM table on socket %u\n", socket);
-        }
-
-        for (rule = 0; rule < fastpath.n_lpm_rules; rule ++) {
-            int ret;
-
-            ret = rte_lpm_add(fastpath.lpm_tables[socket],
-                fastpath.lpm_rules[rule].ip,
-                fastpath.lpm_rules[rule].depth,
-                fastpath.lpm_rules[rule].if_out);
-
-            if (ret < 0) {
-                rte_panic("Unable to add entry %u (%x/%u => %u) to the LPM table on socket %u (%d)\n",
-                    (unsigned) rule,
-                    (unsigned) fastpath.lpm_rules[rule].ip,
-                    (unsigned) fastpath.lpm_rules[rule].depth,
-                    (unsigned) fastpath.lpm_rules[rule].if_out,
-                    socket,
-                    ret);
-            }
-        }
-
-    }
-
-    for (lcore = 0; lcore < FASTPATH_MAX_LCORES; lcore ++) {
-        if (fastpath.lcore_params[lcore].type != e_FASTPATH_LCORE_WORKER) {
-            continue;
-        }
-
-        socket = rte_lcore_to_socket_id(lcore);
-        fastpath.lcore_params[lcore].worker.lpm_table = fastpath.lpm_tables[socket];
-    }
-}
-
 static void
 fastpath_init_rings(void)
 {
@@ -321,7 +264,7 @@ check_all_ports_link_status(uint8_t port_num, uint32_t port_mask)
                 continue;
             n_rx_queues = fastpath_get_nic_rx_queues_per_port(portid);
             n_tx_queues = fastpath_get_nic_tx_queues_per_port(portid);
-            if ((n_rx_queues == 0) && (n_tx_queues == 0))
+            if (n_rx_queues == 0)
                 continue;
             memset(&link, 0, sizeof(link));
             rte_eth_link_get_nowait(portid, &link);
@@ -376,14 +319,15 @@ fastpath_init_nics(void)
         struct rte_mempool *pool;
 
         n_rx_queues = fastpath_get_nic_rx_queues_per_port(port);
-        n_tx_queues = fastpath_get_lcores_worker();
+        n_tx_queues = fastpath_get_lcores_rx_worker();
 
-        if ((n_rx_queues == 0) && (n_tx_queues == 0)) {
+        if (n_rx_queues == 0) {
             continue;
         }
 
         /* Init port */
-        printf("Initializing NIC port %u ...\n", (unsigned) port);
+        printf("Initializing NIC port %u Rx queue %u Tx queue %u...\n", 
+            (unsigned) port, n_rx_queues, n_tx_queues);
         ret = rte_eth_dev_configure(
             port,
             (uint8_t) n_rx_queues,
@@ -466,9 +410,12 @@ fastpath_init(void)
     fastpath_init_frag_tables();
     fastpath_init_mbuf_pools();
     fastpath_init_indirect_mbuf_pools();
-    fastpath_init_lpm_tables();
     fastpath_init_rings();
     fastpath_init_nics();
+
+    setup();
+
+    fastpath_log_set_screen_level(LOG_LEVEL);
 
     printf("Initialization completed.\n");
 }

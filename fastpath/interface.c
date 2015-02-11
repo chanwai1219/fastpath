@@ -71,7 +71,7 @@ void interface_receive(struct rte_mbuf *m,
         ipv4_hdr = rte_pktmbuf_mtod(m, struct ipv4_hdr *);
 
         fastpath_log_debug("interface %s receive pkt "NIPQUAD_FMT" ==> "NIPQUAD_FMT"\n",
-            NIPQUAD(&ipv4_hdr->src_addr), NIPQUAD(&ipv4_hdr->dst_addr));
+            iface->name, NIPQUAD(ipv4_hdr->src_addr), NIPQUAD(ipv4_hdr->dst_addr));
 
         /* Check to make sure the packet is valid (RFC1812) */
         if (is_valid_ipv4_pkt(ipv4_hdr, m->pkt_len) < 0) {
@@ -128,7 +128,7 @@ void interface_receive(struct rte_mbuf *m,
         }
     }
 
-    SEND_PKT(m, iface, private->ipfwd);
+    SEND_PKT(m, iface, private->ipfwd, PKT_DIR_RECV);
 }
 
 void interface_xmit(struct rte_mbuf *m, 
@@ -148,7 +148,7 @@ void interface_xmit(struct rte_mbuf *m,
     if (m->ol_flags & PKT_RX_IPV4_HDR) {
         /* if we don't need to do any fragmentation */
         if (likely (IPV4_MTU_DEFAULT >= m->pkt_len)) {
-            SEND_PKT(m, iface, private->bridge);
+            SEND_PKT(m, iface, private->bridge, PKT_DIR_XMIT);
         } else {
             n_frags = rte_ipv4_fragment_packet(m,
                 &pkts_out[0],
@@ -164,13 +164,13 @@ void interface_xmit(struct rte_mbuf *m,
                 return;
 
             for (i = 0; i < n_frags; i++) {
-                SEND_PKT(pkts_out[i], iface, private->bridge);
+                SEND_PKT(pkts_out[i], iface, private->bridge, PKT_DIR_XMIT);
             }
         }
     } else if (m->ol_flags & PKT_RX_IPV6_HDR) {
         /* if we don't need to do any fragmentation */
         if (likely (IPV6_MTU_DEFAULT >= m->pkt_len)) {
-            SEND_PKT(m, iface, private->bridge);
+            SEND_PKT(m, iface, private->bridge, PKT_DIR_XMIT);
         } else {
             n_frags = rte_ipv6_fragment_packet(m,
                 &pkts_out[0],
@@ -186,7 +186,7 @@ void interface_xmit(struct rte_mbuf *m,
                 return;
 
             for (i = 0; i < n_frags; i++) {
-                SEND_PKT(pkts_out[i], iface, private->bridge);
+                SEND_PKT(pkts_out[i], iface, private->bridge, PKT_DIR_XMIT);
             }
         }
     }
@@ -216,7 +216,6 @@ int interface_init(uint16_t ifidx)
         return -ENOMEM;
     }
 
-    iface->ifindex = 0;
     iface->type = MODULE_TYPE_INTERFACE;
     snprintf(iface->name, sizeof(iface->name), "eif%d", ifidx);
 

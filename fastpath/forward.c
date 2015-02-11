@@ -47,7 +47,7 @@ void ipfwd_receive(struct rte_mbuf *m,
             neigh = private->neigh_tbl[next_hop];
             if (neigh == NULL) {
                 fastpath_log_debug("lpm entry for "NIPQUAD_FMT" not found, drop packet\n",
-                    NIPQUAD(&ipv4_hdr->dst_addr));
+                    NIPQUAD(ipv4_hdr->dst_addr));
                 rte_pktmbuf_free(m);
                 return;
             }
@@ -63,7 +63,7 @@ void ipfwd_receive(struct rte_mbuf *m,
                 rte_memcpy(rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr), 
                     &neigh->hdr, 
                     sizeof(struct ether_hdr));
-                SEND_PKT(m, ipfwd, private->ipv4[neigh->if_out]);
+                SEND_PKT(m, ipfwd, private->ipv4[neigh->if_out], PKT_DIR_XMIT);
                 break;
 
             default:
@@ -80,7 +80,7 @@ void ipfwd_receive(struct rte_mbuf *m,
 
             if (neigh == NULL) {
                 fastpath_log_debug("lpm6 entry for "NIP6_FMT" not found, drop packet\n",
-                    NIP6(&ipv6_hdr->dst_addr));
+                    NIP6(ipv6_hdr->dst_addr));
                 rte_pktmbuf_free(m);
                 return;
             }
@@ -96,7 +96,7 @@ void ipfwd_receive(struct rte_mbuf *m,
                 rte_memcpy(rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr), 
                     &neigh->hdr, 
                     sizeof(struct ether_hdr));
-                SEND_PKT(m, ipfwd, private->ipv6[neigh->if_out]);
+                SEND_PKT(m, ipfwd, private->ipv6[neigh->if_out], PKT_DIR_XMIT);
                 break;
 
             default:
@@ -121,14 +121,12 @@ void neigh_init(struct module *ipfwd)
 {
     char s[64];
     int socketid;
-    unsigned lcore_id;
     struct ipfwd_private *private = (struct ipfwd_private *)ipfwd->private;
 
-    for (lcore_id = 0; lcore_id < FASTPATH_MAX_LCORES; lcore_id++) {
-        if (rte_lcore_is_enabled(lcore_id) == 0)
+    for (socketid = 0; socketid < FASTPATH_MAX_SOCKETS; socketid++) {
+        if (fastpath_is_socket_used(socketid) == 0) {
             continue;
-        
-        socketid = rte_lcore_to_socket_id(lcore_id);
+        }
 
         if (private->neigh_hash_tbl[socketid] != NULL) {
             continue;
@@ -223,10 +221,10 @@ int ipfwd_init(void)
     ipfwd->type = MODULE_TYPE_IPFWD;
     snprintf(ipfwd->name, sizeof(ipfwd->name), "ipfwd");
 
+    ipfwd->private = private;
+
     neigh_init(ipfwd);
     lpm_init(ipfwd);
-
-    ipfwd->private = private;
 
     ipfwd_module = ipfwd;
 
