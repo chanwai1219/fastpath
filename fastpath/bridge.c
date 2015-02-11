@@ -92,48 +92,46 @@ static void bridge_flood(struct rte_mbuf *m, struct net_device *br, uint8_t inpu
 {
     uint32_t i, clone_num, use_clone;
     struct rte_mbuf *mc;
-    struct net_device *dst[BRIDGE_MAX_PORTS];
     struct bridge_private *private = (struct bridge_private *)br->private;
 
-    memset(dst, 0, sizeof(dst));
-
-    clone_num = 0;
-
-    for (i = 0; i < BRIDGE_MAX_PORTS; i++) {
-        if (input != i && private->port_dev[i] != NULL) {
-            dst[clone_num] = private->port_dev[i];
-            clone_num++;
-        }
-    }
-    if (input == BRIDGE_MAX_PORTS) {
-        dst[clone_num] = private->interface_dev;
-        clone_num++;
-    }
+    clone_num = private->port_num;
 
     use_clone = (private->port_num <= FASTPATH_CLONE_PORTS 
         && m->nb_segs <= FASTPATH_CLONE_SEGS);
 
-    if (use_clone == 0) {
-        rte_pktmbuf_refcnt_update(m, (uint16_t)clone_num);
-    }
+    for (i = 0; i < BRIDGE_MAX_PORTS; i++) {
+        if (i != input && private->port_dev[i] != NULL) {
+            if (clone_num > 1) {
+                if (likely((mc = bridge_out_pkt(m, use_clone)) != NULL)) {
+                    SEND_PKT(mc, br, private->port_dev[i]);
+                } else if (use_clone == 0) {
+                    rte_pktmbuf_free(m);
+                    return;
+                }
+            } else {
+                /* last pkt */
+                if (use_clone != 0) {
+                    if (input == BRIDGE_MAX_PORTS) {
+                        SEND_PKT(m, br, private->interface_dev);
+                    } else {
+                        SEND_PKT(m, br, private->port_dev[i]);
+                    }
+                } else {
+                    rte_pktmbuf_free(m);
+                }
 
-    for (i = 0; i < (clone_num - 1); i++) {
-        if (likely((mc = bridge_out_pkt(m, use_clone)) != NULL)) {
-            SEND_PKT(mc, br, dst[i]);
-        } else if (use_clone == 0) {
-            rte_pktmbuf_free(m);
-            return;
+                break;
+            }
         }
+
+        clone_num--;
     }
 
-    if (use_clone != 0) {
-        SEND_PKT(m, br, dst[clone_num - 1]);
-    } else {
-        rte_pktmbuf_free(m);
-    }
+    return;
 }
 
-void bridge_receive(struct rte_mbuf *m, struct net_device *peer, struct net_device *dev)
+void bridge_receive(struct rte_mbuf *m, 
+    struct net_device *peer, struct net_device *dev)
 {
     uint8_t port;
     struct ether_hdr *eth;
@@ -179,7 +177,8 @@ void bridge_receive(struct rte_mbuf *m, struct net_device *peer, struct net_devi
     }
 }
 
-void bridge_xmit(struct rte_mbuf *m, __rte_unused struct net_device *peer, struct net_device *dev)
+void bridge_xmit(struct rte_mbuf *m, 
+    __rte_unused struct net_device *peer, struct net_device *dev)
 {
     struct bridge_fdb_entry *entry;
     struct ether_hdr *eth = rte_pktmbuf_mtod(m, struct ether_hdr *);

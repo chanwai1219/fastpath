@@ -334,6 +334,8 @@ fastpath_worker(
 		}
 
         fastpath_process_packet_bulk(lp->mbuf_in.array, bsz_rd);
+
+        rte_ip_frag_free_death_row(&fastpath.death_row, PREFETCH_OFFSET);
 	}
 }
 
@@ -432,6 +434,8 @@ fastpath_rx_worker(
 #endif
 
 		fastpath_process_packet_bulk(lp->mbuf_in.array, n_mbufs);
+
+        rte_ip_frag_free_death_row(&fastpath.death_row, PREFETCH_OFFSET);
 	}
 }
 

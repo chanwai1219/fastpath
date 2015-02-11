@@ -208,110 +208,135 @@
 #endif
 
 #ifndef FASTPATH_CLONE_PORTS
-#define	FASTPATH_CLONE_PORTS    2
+#define FASTPATH_CLONE_PORTS    2
 #endif
 
 #ifndef FASTPATH_CLONE_SEGS
-#define	FASTPATH_CLONE_SEGS     2
+#define FASTPATH_CLONE_SEGS     2
 #endif
 
+#ifndef IPV4_MTU_DEFAULT
+#define IPV4_MTU_DEFAULT        ETHER_MTU
+#endif
+
+#ifndef IPV6_MTU_DEFAULT
+#define	IPV6_MTU_DEFAULT        ETHER_MTU
+#endif
+
+#ifndef IP_FRAG_TBL_BUCKET_ENTRIES
+#define IP_FRAG_TBL_BUCKET_ENTRIES    16
+#endif
+
+#define MAX_FLOW_NUM    UINT16_MAX
+#define MIN_FLOW_NUM    1
+#define DEF_FLOW_NUM    0x1000
+
+/* TTL numbers are in ms. */
+#define MAX_FLOW_TTL    (3600 * MS_PER_S)
+#define MIN_FLOW_TTL    1
+#define DEF_FLOW_TTL    MS_PER_S
+
+#define MAX_FRAG_NUM    RTE_LIBRTE_IP_FRAG_MAX_FRAG
+
 struct mbuf_array {
-	struct rte_mbuf *array[FASTPATH_MBUF_ARRAY_SIZE];
-	uint32_t n_mbufs;
+    struct rte_mbuf *array[FASTPATH_MBUF_ARRAY_SIZE];
+    uint32_t n_mbufs;
 };
 
 enum fastpath_lcore_type {
-	e_FASTPATH_LCORE_DISABLED = 0,
-	e_FASTPATH_LCORE_RX,
-	e_FASTPATH_LCORE_WORKER,
-	e_FASTPATH_LCORE_RX_WORKER
+    e_FASTPATH_LCORE_DISABLED = 0,
+    e_FASTPATH_LCORE_RX,
+    e_FASTPATH_LCORE_WORKER,
+    e_FASTPATH_LCORE_RX_WORKER
 };
 
 struct fastpath_params_rx {
-	/* NIC */
-	struct {
-		uint8_t port;
-		uint8_t queue;
-	} nic_queues[FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE];
-	uint32_t n_nic_queues;
+    /* NIC */
+    struct {
+        uint8_t port;
+        uint8_t queue;
+    } nic_queues[FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE];
+    uint32_t n_nic_queues;
 
-	/* Rings */
-	struct rte_ring *rings[FASTPATH_MAX_WORKER_LCORES];
-	uint32_t n_rings;
+    /* Rings */
+    struct rte_ring *rings[FASTPATH_MAX_WORKER_LCORES];
+    uint32_t n_rings;
 
-	/* Internal buffers */
-	struct mbuf_array mbuf_in;
-	struct mbuf_array mbuf_out[FASTPATH_MAX_WORKER_LCORES];
-	uint8_t mbuf_out_flush[FASTPATH_MAX_WORKER_LCORES];
+    /* Internal buffers */
+    struct mbuf_array mbuf_in;
+    struct mbuf_array mbuf_out[FASTPATH_MAX_WORKER_LCORES];
+    uint8_t mbuf_out_flush[FASTPATH_MAX_WORKER_LCORES];
 
-	/* Stats */
-	uint32_t nic_queues_count[FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE];
-	uint32_t nic_queues_iters[FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE];
-	uint32_t rings_count[FASTPATH_MAX_WORKER_LCORES];
-	uint32_t rings_iters[FASTPATH_MAX_WORKER_LCORES];
+    /* Stats */
+    uint32_t nic_queues_count[FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE];
+    uint32_t nic_queues_iters[FASTPATH_MAX_NIC_RX_QUEUES_PER_LCORE];
+    uint32_t rings_count[FASTPATH_MAX_WORKER_LCORES];
+    uint32_t rings_iters[FASTPATH_MAX_WORKER_LCORES];
 };
 
 struct fastpath_params_worker {
     /* NIC */
     uint16_t tx_queue_id[FASTPATH_MAX_NIC_PORTS];
     
-	/* Rings */
-	struct rte_ring *rings[FASTPATH_MAX_RX_LCORES];
-	uint32_t n_rings;
+    /* Rings */
+    struct rte_ring *rings[FASTPATH_MAX_RX_LCORES];
+    uint32_t n_rings;
 
-	/* LPM table */
-	struct rte_lpm *lpm_table;
-	uint32_t worker_id;
+    /* LPM table */
+    struct rte_lpm *lpm_table;
+    uint32_t worker_id;
 
-	/* Internal buffers */
-	struct mbuf_array mbuf_in;
-	struct mbuf_array mbuf_out[FASTPATH_MAX_NIC_PORTS];
-	uint8_t mbuf_out_flush[FASTPATH_MAX_NIC_PORTS];
+    /* Internal buffers */
+    struct mbuf_array mbuf_in;
+    struct mbuf_array mbuf_out[FASTPATH_MAX_NIC_PORTS];
+    uint8_t mbuf_out_flush[FASTPATH_MAX_NIC_PORTS];
 };
 
 struct fastpath_lcore_params {
-	struct fastpath_params_rx rx;
-	struct fastpath_params_worker worker;
-	enum fastpath_lcore_type type;
-	struct rte_mempool *pktbuf_pool;
+    struct fastpath_params_rx rx;
+    struct fastpath_params_worker worker;
+    enum fastpath_lcore_type type;
+    struct rte_mempool *pktbuf_pool;
     struct rte_mempool *indirect_pool;
 } __rte_cache_aligned;
 
 struct fastpath_lpm_rule {
-	uint32_t ip;
-	uint8_t depth;
-	uint8_t if_out;
+    uint32_t ip;
+    uint8_t depth;
+    uint8_t if_out;
 };
 
 struct fastpath_params {
-	/* lcore */
-	struct fastpath_lcore_params lcore_params[FASTPATH_MAX_LCORES];
+    /* lcore */
+    struct fastpath_lcore_params lcore_params[FASTPATH_MAX_LCORES];
 
-	/* NIC */
-	uint8_t nic_rx_queue_mask[FASTPATH_MAX_NIC_PORTS][FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT];
+    /* NIC */
+    uint8_t nic_rx_queue_mask[FASTPATH_MAX_NIC_PORTS][FASTPATH_MAX_RX_QUEUES_PER_NIC_PORT];
 
-	/* mbuf pools */
-	struct rte_mempool *pktbuf_pools[FASTPATH_MAX_SOCKETS];
+    /* mbuf pools */
+    struct rte_mempool *pktbuf_pools[FASTPATH_MAX_SOCKETS];
     struct rte_mempool *indirect_pools[FASTPATH_MAX_SOCKETS];
+    struct rte_ip_frag_tbl *frag_tbl;
+    struct rte_ip_frag_death_row death_row;
 
-	/* LPM tables */
-	struct rte_lpm *lpm_tables[FASTPATH_MAX_SOCKETS];
-	struct fastpath_lpm_rule lpm_rules[FASTPATH_MAX_LPM_RULES];
-	uint32_t n_lpm_rules;
+    /* LPM tables */
+    struct rte_lpm *lpm_tables[FASTPATH_MAX_SOCKETS];
+    struct fastpath_lpm_rule lpm_rules[FASTPATH_MAX_LPM_RULES];
+    uint32_t n_lpm_rules;
 
-	/* rings */
-	uint32_t nic_rx_ring_size;
-	uint32_t nic_tx_ring_size;
-	uint32_t ring_size;
+    /* rings */
+    uint32_t nic_rx_ring_size;
+    uint32_t nic_tx_ring_size;
+    uint32_t ring_size;
 
-	/* burst size */
-	uint32_t burst_size_rx_read;
-	uint32_t burst_size_rx_write;
-	uint32_t burst_size_worker_read;
-	uint32_t burst_size_worker_write;
+    /* burst size */
+    uint32_t burst_size_rx_read;
+    uint32_t burst_size_rx_write;
+    uint32_t burst_size_worker_read;
+    uint32_t burst_size_worker_write;
 
-	/* load balancing */
-	uint8_t pos_lb;
+    /* load balancing */
+    uint8_t pos_lb;
     uint8_t numa_on;
 } __rte_cache_aligned;
 
