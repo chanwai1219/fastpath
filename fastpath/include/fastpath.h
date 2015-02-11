@@ -55,6 +55,7 @@
 #include <rte_ip.h>
 #include <rte_tcp.h>
 #include <rte_lpm.h>
+#include <rte_lpm6.h>
 #include <rte_string_fns.h>
 #include <rte_spinlock.h>
 
@@ -101,6 +102,7 @@ enum {
     MODULE_TYPE_VLAN,
     MODULE_TYPE_BRIDGE,
     MODULE_TYPE_INTERFACE,
+    MODULE_TYPE_IPFWD,
 };
 
 struct module {
@@ -131,6 +133,7 @@ struct module {
 #include "vlan.h"
 #include "bridge.h"
 #include "interface.h"
+#include "forward.h"
 
 #endif /* __FASTPATH_H__ */
 

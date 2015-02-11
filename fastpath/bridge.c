@@ -32,7 +32,7 @@ static void bridge_flood(struct rte_mbuf *m, struct module *br, uint8_t input);
 static struct bridge_fdb_entry * bridge_fdb_lookup(struct module *br, struct ether_addr* ea);
 static struct bridge_fdb_entry * bridge_fdb_create(uint8_t port, uint8_t flag);
 static int bridge_fdb_update(struct module *br, struct ether_addr *addr, uint8_t index);
-static int bridge_fdb_init(struct module *br);
+static void bridge_fdb_init(struct module *br);
 
 static uint8_t bridge_get_port(struct module *br, struct module *port)
 {
@@ -273,7 +273,7 @@ int bridge_fdb_update(struct module *br,
     return 0;
 }
 
-int bridge_fdb_init(struct module *br)
+void bridge_fdb_init(struct module *br)
 {
     char s[64];
     int socketid;
@@ -285,6 +285,7 @@ int bridge_fdb_init(struct module *br)
         .entries = BRIDGE_HASH_ENTRIES,
         .bucket_entries = 8,
         .key_len = sizeof(struct ether_addr),
+        .hash_func_init_val = 0,
     };
     
     for (lcore_id = 0; lcore_id < FASTPATH_MAX_LCORES; lcore_id++) {
@@ -301,21 +302,14 @@ int bridge_fdb_init(struct module *br)
         rte_spinlock_init(&private->lock[socketid]);
         private->bridge_hash_tbl[socketid] = rte_hash_create(&bridge_hash_params);
         if (private->bridge_hash_tbl[socketid] == NULL) {
-            fastpath_log_error("bridge_fdb_init: malloc %s failed\n", bridge_hash_params.name);
-
-            for (socketid = 0; socketid < FASTPATH_MAX_SOCKETS; socketid++) {
-                if (private->bridge_hash_tbl[socketid] != NULL) {
-                    rte_hash_free(private->bridge_hash_tbl[socketid]);
-                }
-            }
-            
-            return -ENOMEM;
+            rte_panic("bridge_fdb_init: malloc %s failed\n", bridge_hash_params.name);
+            return;
         }
 
         fastpath_log_info("bridge %s create hash table %s\n", br->name, bridge_hash_params.name);
     }
 
-    return 0;
+    return;
 }
 
 int bridge_add_if(struct module *br, struct module *port)
@@ -400,12 +394,8 @@ int bridge_init(uint16_t vid)
     
     private->vid = vid;
     private->port_num = 0;
-    if (bridge_fdb_init(br) != 0) {
-        rte_free(private);
-        rte_free(br);
-
-        return -ENOMEM;
-    }
+    
+    bridge_fdb_init(br);
     
     br->private = (void *)private;
 

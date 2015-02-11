@@ -41,10 +41,8 @@ include $(RTE_SDK)/mk/rte.vars.mk
 # binary name
 APP = fastpath
 
-SRCDIR = .
-
 # all source are stored in SRCS-y
-SRCS-y := $(shell find $(SRCDIR) -name '*.c')
+SRCS-y := main.c runtime.c config.c init.c log.c utils.c ethernet.c vlan.c bridge.c interface.c forward.c
 
 CFLAGS += -g -O0
 CFLAGS += $(WERROR_FLAGS)
