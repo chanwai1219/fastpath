@@ -100,24 +100,7 @@ void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct 
         return;
     }
 
-    {
-        int i, len = m->buf_len;
-        uint8_t* ptr = rte_pktmbuf_mtod(m, uint8_t *);
-
-        printf("seg %d len %d\r\n%p: ", m->nb_segs ,len, (uint8_t*)ptr);
-        
-        for (i = 0; i < len; i++) {
-            printf("%02x", ((uint8_t*)ptr)[i]);
-            if (i % 2)
-                printf(" ");
-            if (15 == i % 16)
-            {
-                printf("\r\n");
-                if (i + 1 < len)
-                    printf("%p: ", (uint8_t*)ptr + i + 1);
-            }
-        }
-    }
+    rte_pktmbuf_dump(stdout, m, 128);
 
     n_mbufs = lp->mbuf_out[port].n_mbufs;
     lp->mbuf_out[port].array[n_mbufs] = m;
@@ -134,6 +117,8 @@ void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct 
 
         if (unlikely(n_pkts < n_mbufs)) {
 			uint32_t k;
+            fastpath_log_error("ethernet_xmit: send pkt failed, success %d expected %d",
+                n_pkts, n_mbufs);
 			for (k = n_pkts; k < n_mbufs; k ++) {
 				struct rte_mbuf *pkt_to_free = lp->mbuf_out[port].array[k];
 				rte_pktmbuf_free(pkt_to_free);

@@ -72,7 +72,6 @@ bridge_out_pkt(struct rte_mbuf *pkt, int use_clone)
     /* prepend new header */
     hdr->next = pkt;
 
-
     /* update header's fields */
     hdr->pkt_len = (uint16_t)(hdr->data_len + pkt->pkt_len);
     hdr->nb_segs = (uint8_t)(pkt->nb_segs + 1);
@@ -91,49 +90,41 @@ bridge_out_pkt(struct rte_mbuf *pkt, int use_clone)
 
 static void bridge_flood(struct rte_mbuf *m, struct module *br, uint8_t input)
 {
-    uint32_t i, clone_num, use_clone;
+    int socketid;
+    uint32_t i, pkt_num;
     struct rte_mbuf *mc;
+    struct rte_mempool *mp;
     struct bridge_private *private = (struct bridge_private *)br->private;
 
-    clone_num = private->port_num;
-    use_clone = (private->port_num <= FASTPATH_CLONE_PORTS 
-        && m->nb_segs <= FASTPATH_CLONE_SEGS);
+    socketid = rte_socket_id();
+    mp = fastpath.indirect_pools[socketid];
+    pkt_num = private->port_num;
 
-    printf("%s: clone %d use clone %d\n", __func__, clone_num, use_clone);
-
-    rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct ether_hdr));
-
-    for (i = 0; i < BRIDGE_MAX_PORTS; i++) {
+    for (i = 0; i < BRIDGE_MAX_PORTS && pkt_num > 0; i++) {
         if (i != input && private->port[i] != NULL) {
-            if (clone_num > 1) {
-                if (likely((mc = bridge_out_pkt(m, use_clone)) != NULL)) {
-                    printf("%s %d\n", __func__, __LINE__);
+            if (pkt_num > 1) {
+                mc = rte_pktmbuf_clone(m, mp);
+                if (likely(mc != NULL)) {
+                    rte_pktmbuf_prepend(mc, (uint16_t)sizeof(struct ether_hdr));
                     SEND_PKT(mc, br, private->port[i], PKT_DIR_XMIT);
-                } else if (use_clone == 0) {
-                    fastpath_log_error("bridge_flood: clone mbuf failed\n");
-                    rte_pktmbuf_free(m);
-                    return;
                 }
             } else {
                 /* last pkt */
-                if (use_clone != 0) {
-                    if (input == BRIDGE_MAX_PORTS) {
-                        printf("%s %d\n", __func__, __LINE__);
-                        SEND_PKT(m, br, private->interface, PKT_DIR_RECV);
-                    } else {
-                        printf("%s %d\n", __func__, __LINE__);
-                        SEND_PKT(m, br, private->port[i], PKT_DIR_XMIT);
-                    }
-                } else {
-                    printf("%s %d\n", __func__, __LINE__);
-                    rte_pktmbuf_free(m);
-                }
+                rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct ether_hdr));
+                SEND_PKT(m, br, private->port[i], PKT_DIR_XMIT);
 
-                break;
+                return;
             }
-
-            clone_num--;
+            
+            pkt_num--;
         }
+    }
+
+    if (pkt_num == 1 && input == BRIDGE_MAX_PORTS) {
+        SEND_PKT(m, br, private->interface, PKT_DIR_RECV);
+    } else {
+        fastpath_log_error("bridge_flood: error occured pkt num %d input %d", pkt_num, input);
+        rte_pktmbuf_free(m);
     }
 
     return;
@@ -174,13 +165,12 @@ void bridge_receive(struct rte_mbuf *m,
 
     entry = bridge_fdb_lookup(br, &eth_hdr->d_addr);
     if (entry == NULL) {
-        if (is_multicast_ether_addr(&eth_hdr->d_addr)) {
-            bridge_flood(m, br, port);
-        }
+        bridge_flood(m, br, port);
     } else {
         if (entry->flag & BRIDGE_FDB_FLAG_LOCAL) {
             SEND_PKT(m, br, private->interface, PKT_DIR_RECV);
         } else {
+            rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct ether_hdr));
             SEND_PKT(m, br, private->port[entry->port], PKT_DIR_XMIT);
         }
     }
