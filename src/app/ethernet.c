@@ -132,6 +132,30 @@ void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct 
     return;
 }
 
+int ethernet_rcvmsg(struct module *local, struct msg_hdr *msg, struct msg_hdr *resp)
+{
+    int ret = 0;
+    struct ethernet_private *private;
+
+    if (local == NULL) {
+        fastpath_log_error("ethernet_rcvmsg: invalid local ptr\n");
+        return -EINVAL;
+    }
+
+    private = (struct ethernet_private *)local->private;
+
+    switch (msg->cmd) {
+    case ETHERNET_GET_ADDRESS:
+        rte_eth_macaddr_get(private->port, (struct ether_addr *)resp->data);
+        break;
+    default:
+        ret = -EINVAL;
+        break;
+    }
+
+    return ret;
+}
+
 int ethernet_connect(struct module *local, struct module *peer, void *param)
 {
     struct ethernet_private *private;

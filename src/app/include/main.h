@@ -370,6 +370,4 @@ uint32_t fastpath_get_lcores_worker(void);
 uint32_t fastpath_get_lcores_rx_worker(void);
 void fastpath_print_params(void);
 
-void setup(void);
-
 #endif /* _MAIN_H_ */

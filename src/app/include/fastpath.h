@@ -59,9 +59,15 @@
 #include <rte_string_fns.h>
 #include <rte_spinlock.h>
 
+#include "libxml/list.h"
+#include "libxml/parser.h"
+#include "libxml/tree.h"
+#include "libxml/xpath.h"
+
 #include "main.h"
 #include "log.h"
 #include "utils.h"
+#include "stack.h"
 
 #define MAC_FMT "%02x:%02x:%02x:%02x:%02x:%02x"
 #define MAC_ARG(x) ((uint8_t*)(x))[0],((uint8_t*)(x))[1],((uint8_t*)(x))[2], \
@@ -104,6 +110,12 @@ enum {
     MODULE_TYPE_BRIDGE,
     MODULE_TYPE_INTERFACE,
     MODULE_TYPE_IPFWD,
+};
+
+struct msg_hdr {
+    uint16_t len;
+    uint16_t cmd;
+    uint8_t data[0];
 };
 
 struct module {
