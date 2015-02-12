@@ -4,6 +4,8 @@
 #define FASTPATH_STACK_CONFIG   "./stack.cfg"
 
 struct module_entry {
+    uint32_t param1;
+    uint32_t param2;
     struct module *module;
     LIST_ENTRY(module_entry) entry;
 };
@@ -88,7 +90,7 @@ xmlNodePtr xml_get_node(xmlXPathContextPtr context, const char *path, int *dup)
     return node;
 }
 
-void module_add(struct module *module)
+void module_add(struct module *module, uint32_t param1, uint32_t param2)
 {
     struct module_entry *entry;
 
@@ -104,23 +106,36 @@ void module_add(struct module *module)
     }
 
     entry->module = module;
+    entry->param1 = param1;
+    entry->param2 = param2;
 
     LIST_INSERT_HEAD(&module_list, module, entry);
 }
 
-void module_print()
+void module_connect()
 {
-    struct module *module;
+    struct module *ipfwd;
     struct module_entry *entry;
+
     
-    LIST_FOREACH(
+
+    LIST_FOREACH(entry, &module_list, entry) {
+        module = entry->module;
+
+        fastpath_log_info("module %s\n", module->name);
+    }
 }
+
 
 void stack_setup(void)
 {
     int i;
     char *str;
-    struct module *module;
+    struct module *eth[FASTPATH_MAX_NIC_PORTS] = {0};
+    struct module *vlan[VLAN_VID_MAX] = {0};
+    struct module *br[VLAN_VID_MAX] = {0};
+    struct module *eif[IPFWD_MAX_LINK] = {0};
+    struct module *ipfwd;
     struct module_entry *entry;
     xmlDocPtr   doc = NULL; 
     xmlNodePtr  node;
@@ -166,8 +181,8 @@ void stack_setup(void)
         str = xml_get_param(node, "native", NULL);
         native = strtoul(str, NULL, 0);
         
-        module = ethernet_init(port, mode, native);
-        module_add(module);
+        eth[i] = ethernet_init(port, mode, native);
+        module_add(eth[i], port, 0);
     }
 
     /* bridge */
@@ -184,13 +199,13 @@ void stack_setup(void)
         str = xml_get_param(node, "vlan", NULL);
         vid = strtoul(str, NULL, 0);
 
-        module = bridge_init(vid);
-        module_add(module);
+        br[i] = bridge_init(vid);
+        module_add(br[i], vid, 0);
     }
 
     /* interface */
     nodeset = xml_get_nodeset(context, "//interface-list/interface");
-    if (nodeset == NULL) {
+    if (nodeset == NULL || nodeset->nodesetval->nodeNr > IPFWD_MAX_LINK) {
         fastpath_log_error("get interface failed\n");
         goto err_out;
     }
@@ -202,15 +217,22 @@ void stack_setup(void)
         str = xml_get_param(node, "name", NULL);
         ifidx = strtoul(&str[3], NULL, 0);
 
-        module = interface_init(ifidx);
-        module_add(module);
+        eif[i] = interface_init(ifidx);
+        module_add(eif[i], ifidx, 0);
     }
 
     /* ip forward */
-    module = ipfwd_init();
-    module_add(module);
-    
-    LIST_FOREACH(
+    ipfwd = ipfwd_init();
+    module_add(ipfwd, 0, 0);
+
+    /* connect modules */
+    LIST_FOREACH(entry, &module_list, entry) {
+        module = entry->module;
+
+        if (module->type == MODULE_TYPE_INTERFACE) {
+            ipfwd->connect(ipfwd, module, &entry->param1);
+        }
+    }
 
 err_out:      
     if (context) {

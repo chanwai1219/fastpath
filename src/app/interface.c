@@ -10,7 +10,8 @@ struct interface_private {
     uint16_t ifindex;
     uint8_t state;
     uint8_t reserved;
-    struct module *ipfwd;
+    struct module *ipv4;
+    struct module *ipv6;
     struct module *bridge;
 };
 
@@ -191,6 +192,36 @@ void interface_xmit(struct rte_mbuf *m,
         }
     }
 }
+
+int interface_connect(struct module *local, struct module *peer, void *param)
+{
+    struct ipfwd_private *private;
+
+    if (local == NULL || peer == NULL) {
+        fastpath_log_error("interface_connect: invalid local %p peer %p\n", 
+            local, peer);
+        return -EINVAL;
+    }
+
+    fastpath_log_info("interface_connect: local %s peer %s\n", local->name, peer->name);
+
+    private = local->private;
+
+    if (peer->type == MODULE_TYPE_BRIDGE) {
+        private->bridge = peer;
+        
+        peer->connect(peer, local, NULL);
+    } else if (peer->type == MODULE_TYPE_IPFWD) {
+        private->ipv4 = peer;
+        private->ipv6 = peer;
+    } else {
+        fastpath_log_error("interface_connect: invalid peer type %d\n", peer->type);
+        return -ENOENT;
+    }
+
+    return 0;
+}
+
 
 int interface_init(uint16_t ifidx)
 {

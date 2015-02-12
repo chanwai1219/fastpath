@@ -326,10 +326,10 @@ int bridge_connect(struct module *local, struct module *peer, void *param)
     fastpath_log_info("bridge_connect: local %s peer %s\n", local->name, peer->name);
 
     private = local->private;
-    
-    if (peer->type == MODULE_TYPE_VLAN) {
-        
-    } else if (peer->type == MODULE_TYPE_ETHERNET) {
+
+    if (peer->type == MODULE_TYPE_INTERFACE) {
+        private->interface = peer;
+    } else if (peer->type == MODULE_TYPE_VLAN || peer->type == MODULE_TYPE_ETHERNET) {
         uint16_t port = *(uint16_t *)param;
         if (port >= BRIDGE_MAX_PORTS) {
             fastpath_log_error("bridge_connect: invalid port %d\n", port);

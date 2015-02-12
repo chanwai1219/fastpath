@@ -1,8 +1,6 @@
 
 #include "fastpath.h"
 
-#define IPFWD_MAX_LINK  16
-
 #define NEIGH_TYPE_LOCAL        1
 #define NEIGH_TYPE_REACHABLE    2
 #define NEIGH_TYPE_UNRESOLVED   3
@@ -199,6 +197,40 @@ void lpm_init(struct module *ipfwd)
     }
 }
 
+int ipfwd_connect(struct module *local, struct module *peer, void *param)
+{
+    struct ipfwd_private *private;
+
+    if (local == NULL || peer == NULL) {
+        fastpath_log_error("ipfwd_connect: invalid local %p peer %p\n", 
+            local, peer);
+        return -EINVAL;
+    }
+
+    fastpath_log_info("ipfwd_connect: local %s peer %s\n", local->name, peer->name);
+
+    private = local->private;
+
+    if (peer->type == MODULE_TYPE_INTERFACE) {
+        uint16_t ifidx = *(uint16_t *)param;
+        if (ifidx >= IPFWD_MAX_LINK) {
+            fastpath_log_error("ipfwd_connect: invalid port %d\n", port);
+            return -EINVAL;
+        }
+
+        fastpath_log_info("ipfwd_connect: ipfwd add interface %d %s\n", ifidx, peer->name);
+        
+        private->ipv4[ifidx] = peer;
+
+        peer->connect(peer, local, NULL);
+    } else {
+        fastpath_log_error("ipfwd_connect: invalid peer type %d\n", peer->type);
+        return -ENOENT;
+    }
+
+    return 0;
+}
+
 int ipfwd_init(void)
 {
     struct module *ipfwd;
@@ -219,6 +251,9 @@ int ipfwd_init(void)
     }
 
     ipfwd->type = MODULE_TYPE_IPFWD;
+    ipfwd->receive = ipfwd_receive;
+    ipfwd->transmit = ipfwd_xmit;
+    ipfwd->connect = ipfwd_connect;
     snprintf(ipfwd->name, sizeof(ipfwd->name), "ipfwd");
 
     ipfwd->private = private;

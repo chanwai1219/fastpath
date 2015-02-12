@@ -62,19 +62,30 @@ int vlan_set_ethernet(struct module *vlan, struct module *eth)
     return 0;
 }
 
-int vlan_set_bridge(struct module *vlan, struct module *br)
+int vlan_connect(struct module *local, struct module *peer, void *param)
 {
-    struct vlan_private *private;
+    struct bridge_private *private;
 
-    if (vlan == NULL || br == NULL) {
-        fastpath_log_error("vlan_set_bridge: invalid vlan %p bridge %p\n", 
-            vlan, br);
-
+    if (local == NULL || peer == NULL) {
+        fastpath_log_error("vlan_connect: invalid local %p peer %p\n", 
+            local, peer);
         return -EINVAL;
     }
     
-    private = (struct vlan_private *)vlan->private;
-    private->bridge = br;
+    fastpath_log_info("vlan_connect: local %s peer %s\n", local->name, peer->name);
+
+    private = local->private;
+
+    if (peer->type == MODULE_TYPE_BRIDGE) {
+        private->bridge = peer;
+    } else if (peer->type == MODULE_TYPE_ETHERNET) {
+        private->ethernet = peer;
+
+        peer->connect(peer, local, NULL);
+    } else {
+        fastpath_log_error("vlan_connect: invalid peer type %d\n", peer->type);
+        return -ENOENT;
+    }
 
     return 0;
 }
