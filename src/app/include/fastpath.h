@@ -160,7 +160,7 @@ enum {
 #include "vlan.h"
 #include "bridge.h"
 #include "interface.h"
-#include "forward.h"
+#include "ipfwd.h"
 
 #endif /* __FASTPATH_H__ */
 

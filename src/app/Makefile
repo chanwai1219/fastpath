@@ -42,7 +42,7 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP = fastpath
 
 # all source are stored in SRCS-y
-SRCS-y := main.c runtime.c config.c init.c log.c utils.c ethernet.c vlan.c bridge.c interface.c forward.c stack.c
+SRCS-y := main.c runtime.c config.c init.c log.c utils.c ethernet.c vlan.c bridge.c interface.c ipfwd.c stack.c
 
 CFLAGS += -g -O0 $(WERROR_FLAGS)
 CFLAGS += -I$(SRCDIR)/include

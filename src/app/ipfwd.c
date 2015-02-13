@@ -209,12 +209,12 @@ int ipfwd_connect(struct module *local, struct module *peer, void *param)
 
     fastpath_log_info("ipfwd_connect: local %s peer %s\n", local->name, peer->name);
 
-    private = local->private;
+    private = (struct ipfwd_private *)local->private;
 
     if (peer->type == MODULE_TYPE_INTERFACE) {
         uint16_t ifidx = *(uint16_t *)param;
         if (ifidx >= IPFWD_MAX_LINK) {
-            fastpath_log_error("ipfwd_connect: invalid port %d\n", port);
+            fastpath_log_error("ipfwd_connect: invalid ifidx %d\n", ifidx);
             return -EINVAL;
         }
 
@@ -231,7 +231,7 @@ int ipfwd_connect(struct module *local, struct module *peer, void *param)
     return 0;
 }
 
-int ipfwd_init(void)
+struct module * ipfwd_init(void)
 {
     struct module *ipfwd;
     struct ipfwd_private *private;
@@ -239,7 +239,7 @@ int ipfwd_init(void)
     ipfwd = rte_zmalloc(NULL, sizeof(struct module), 0);
     if (ipfwd == NULL) {
         fastpath_log_error("ipfwd_init: malloc module failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
     private = rte_zmalloc(NULL, sizeof(struct ipfwd_private), 0);
@@ -247,7 +247,7 @@ int ipfwd_init(void)
         rte_free(ipfwd);
         
         fastpath_log_error("ipfwd_init: malloc ipfwd_private failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
     ipfwd->type = MODULE_TYPE_IPFWD;
@@ -263,6 +263,6 @@ int ipfwd_init(void)
 
     ipfwd_module = ipfwd;
 
-    return 0;
+    return ipfwd;
 }
 

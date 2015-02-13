@@ -413,7 +413,7 @@ fastpath_init(void)
     fastpath_init_rings();
     fastpath_init_nics();
 
-    setup();
+    stack_setup();
 
     fastpath_log_set_screen_level(LOG_LEVEL);
 

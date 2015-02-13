@@ -6,7 +6,8 @@
 
 void ipfwd_receive(struct rte_mbuf *m, struct module *peer, struct module *ipfwd);
 void ipfwd_xmit(struct rte_mbuf *m, struct module *peer, struct module *ipfwd);
-int ipfwd_init(void);
+int ipfwd_connect(struct module *local, struct module *peer, void *param);
+struct module * ipfwd_init(void);
 
 
 #endif

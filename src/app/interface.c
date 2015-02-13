@@ -56,8 +56,7 @@ is_valid_ipv4_pkt(struct ipv4_hdr *pkt, uint32_t link_len)
     return 0;
 }
 
-void interface_receive(struct rte_mbuf *m, 
-    __rte_unused struct module *peer, struct module *iface)
+void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *iface)
 {
     uint64_t cur_tsc = rte_rdtsc();
     struct ipv4_hdr *ipv4_hdr;
@@ -65,6 +64,8 @@ void interface_receive(struct rte_mbuf *m,
     struct interface_private *private;
     struct rte_ip_frag_tbl *tbl;
     struct rte_ip_frag_death_row *dr;
+
+    RTE_SET_USED(peer);
 
     private = (struct interface_private *)iface->private;
 
@@ -102,6 +103,8 @@ void interface_receive(struct rte_mbuf *m,
                 ipv4_hdr = rte_pktmbuf_mtod(m, struct ipv4_hdr *);
             }
         }
+
+        SEND_PKT(m, iface, private->ipv4, PKT_DIR_RECV);
     } else if (m->ol_flags & (PKT_RX_IPV6_HDR | PKT_RX_IPV6_HDR_EXT)) {
         struct ipv6_extension_fragment *frag_hdr;
 
@@ -127,18 +130,19 @@ void interface_receive(struct rte_mbuf *m,
                 ipv6_hdr = rte_pktmbuf_mtod(m, struct ipv6_hdr *);
             }
         }
-    }
 
-    SEND_PKT(m, iface, private->ipfwd, PKT_DIR_RECV);
+        SEND_PKT(m, iface, private->ipv6, PKT_DIR_RECV);
+    }
 }
 
-void interface_xmit(struct rte_mbuf *m, 
-    __rte_unused struct module *peer, struct module *iface)
+void interface_xmit(struct rte_mbuf *m, struct module *peer, struct module *iface)
 {
     int32_t i, n_frags;
     int socketid = rte_socket_id();
     struct rte_mbuf *pkts_out[MAX_FRAG_NUM];
     struct interface_private *private = (struct interface_private *)iface->private;
+
+    RTE_SET_USED(peer);
 
     if (private->state == INTERFACE_LINK_DOWN) {
         fastpath_log_debug("interface_xmit: interface %s link down\n", iface->name);
@@ -195,7 +199,9 @@ void interface_xmit(struct rte_mbuf *m,
 
 int interface_connect(struct module *local, struct module *peer, void *param)
 {
-    struct ipfwd_private *private;
+    struct interface_private *private;
+
+    RTE_SET_USED(param);
 
     if (local == NULL || peer == NULL) {
         fastpath_log_error("interface_connect: invalid local %p peer %p\n", 
@@ -205,7 +211,7 @@ int interface_connect(struct module *local, struct module *peer, void *param)
 
     fastpath_log_info("interface_connect: local %s peer %s\n", local->name, peer->name);
 
-    private = local->private;
+    private = (struct interface_private *)local->private;
 
     if (peer->type == MODULE_TYPE_BRIDGE) {
         private->bridge = peer;
@@ -223,20 +229,20 @@ int interface_connect(struct module *local, struct module *peer, void *param)
 }
 
 
-int interface_init(uint16_t ifidx)
+struct module * interface_init(uint16_t ifidx)
 {
     struct module *iface;
     struct interface_private *private;
 
     if (ifidx >= INTERFACE_INDEX_MAX) {
         fastpath_log_error("interface_init: invalid if index %d\n", ifidx);
-        return -EINVAL;
+        return NULL;
     }
 
     iface = rte_zmalloc(NULL, sizeof(struct module), 0);
     if (iface == NULL) {
         fastpath_log_error("interface_init: malloc module failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
     private = rte_zmalloc(NULL, sizeof(struct interface_private), 0);
@@ -244,7 +250,7 @@ int interface_init(uint16_t ifidx)
         rte_free(iface);
         
         fastpath_log_error("interface_init: malloc interface_private failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
     iface->type = MODULE_TYPE_INTERFACE;
@@ -257,7 +263,7 @@ int interface_init(uint16_t ifidx)
 
     interface_modules[ifidx] = iface;
 
-    return 0;    
+    return iface;    
 }
 
 

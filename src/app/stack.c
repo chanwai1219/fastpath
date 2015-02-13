@@ -10,7 +10,10 @@ struct module_entry {
     LIST_ENTRY(module_entry) entry;
 };
 
-LIST_HEAD(, module) module_list;
+LIST_HEAD(, module_entry) module_list;
+
+void module_add(struct module *module, uint32_t param1, uint32_t param2);
+struct module_entry *module_find(const char *name);
 
 xmlNodePtr xml_get_child(xmlNodePtr node, const char *name)
 {
@@ -99,7 +102,7 @@ void module_add(struct module *module, uint32_t param1, uint32_t param2)
         return;
     }
 
-    entry = rte_malloc(NULL, sizeof(module_entry), 0);
+    entry = rte_malloc(NULL, sizeof(struct module_entry), 0);
     if (entry == NULL) {
         fastpath_log_error("module_add: malloc failed\n");
         return;
@@ -109,53 +112,49 @@ void module_add(struct module *module, uint32_t param1, uint32_t param2)
     entry->param1 = param1;
     entry->param2 = param2;
 
-    LIST_INSERT_HEAD(&module_list, module, entry);
+    LIST_INSERT_HEAD(&module_list, entry, entry);
 }
 
-void module_connect()
+struct module_entry *module_find(const char *name)
 {
-    struct module *ipfwd;
     struct module_entry *entry;
-
     
-
     LIST_FOREACH(entry, &module_list, entry) {
-        module = entry->module;
-
-        fastpath_log_info("module %s\n", module->name);
+        if (strcmp(entry->module->name, name) == 0) {
+            return entry;
+        }
     }
-}
 
+    return NULL;
+}
 
 void stack_setup(void)
 {
     int i;
-    char *str;
-    struct module *eth[FASTPATH_MAX_NIC_PORTS] = {0};
-    struct module *vlan[VLAN_VID_MAX] = {0};
-    struct module *br[VLAN_VID_MAX] = {0};
-    struct module *eif[IPFWD_MAX_LINK] = {0};
-    struct module *ipfwd;
+    const char *str;
+    struct module *module;
     struct module_entry *entry;
     xmlDocPtr   doc = NULL; 
     xmlNodePtr  node;
     xmlXPathObjectPtr nodeset;
     xmlXPathContextPtr context = NULL;
 
+    fastpath_log_info("stack setup start\n");
+
     doc = xmlReadFile(FASTPATH_STACK_CONFIG, NULL, XML_PARSE_NOBLANKS);
     if (doc == NULL) {
-        fastpath_log_error("%s: read %s failed\n", __func__, DP_RUN_CFG);
+        fastpath_log_error("stack_setup: read config file failed\n");
         goto err_out;
     }
     
     if (xmlDocGetRootElement(doc) == NULL) {
-        fastpath_log_error(LOG_ERR, "%s: get root element\n", __func__);
+        fastpath_log_error("stack_setup: get root element\n");
         goto err_out;
     }
     
     context = xmlXPathNewContext(doc);
     if (context == NULL) {
-        fastpath_log_error(LOG_ERR, "%s: get context failed\n", __func__);
+        fastpath_log_error("stack_setup: get context failed\n");
         goto err_out;
     }
 
@@ -175,14 +174,14 @@ void stack_setup(void)
         str = xml_get_param(node, "mode", NULL);
         if (strcmp(str, "trunk") == 0) {
             mode = VLAN_MODE_TRUNK;
-        } else (strcmp(str, "access") == 0) {
+        } else if (strcmp(str, "access") == 0) {
             mode = VLAN_MODE_ACCESS;
         }
         str = xml_get_param(node, "native", NULL);
         native = strtoul(str, NULL, 0);
         
-        eth[i] = ethernet_init(port, mode, native);
-        module_add(eth[i], port, 0);
+        module = ethernet_init(port, mode, native);
+        module_add(module, port, 0);
     }
 
     /* bridge */
@@ -192,15 +191,30 @@ void stack_setup(void)
         goto err_out;
     }
     for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
-        uint16_t vid;
+        uint16_t vid, created;
+        char s[32];
+        xmlNodePtr member;
         
         node = nodeset->nodesetval->nodeTab[i];
 
         str = xml_get_param(node, "vlan", NULL);
         vid = strtoul(str, NULL, 0);
 
-        br[i] = bridge_init(vid);
-        module_add(br[i], vid, 0);
+        created = 0;
+
+        for (member = node->children; member; member = member->next) {
+            if (!strcmp((const char *)member->name, "port")) {
+                snprintf(s, sizeof(s), "%s.%d", member->children->content, vid);
+                printf("bridge %s member %s\n", xml_get_param(node, "name", NULL), s);
+                if (module_find(s) == NULL) {
+                    module = vlan_init(vid);
+                    module_add(module, vid, 0);
+                }
+            }
+        }
+
+        module = bridge_init(vid);
+        module_add(module, vid, 0);
     }
 
     /* interface */
@@ -217,23 +231,38 @@ void stack_setup(void)
         str = xml_get_param(node, "name", NULL);
         ifidx = strtoul(&str[3], NULL, 0);
 
-        eif[i] = interface_init(ifidx);
-        module_add(eif[i], ifidx, 0);
+        module = interface_init(ifidx);
+        module_add(module, ifidx, 0);
     }
 
     /* ip forward */
-    ipfwd = ipfwd_init();
-    module_add(ipfwd, 0, 0);
+    module = ipfwd_init();
+    module_add(module, 0, 0);
 
     /* connect modules */
-    LIST_FOREACH(entry, &module_list, entry) {
-        module = entry->module;
+    nodeset = xml_get_nodeset(context, "//ip-forward/interface");
+    if (nodeset != NULL) {
+        struct module *ipfwd;
 
-        if (module->type == MODULE_TYPE_INTERFACE) {
-            ipfwd->connect(ipfwd, module, &entry->param1);
+        entry = module_find("ipfwd");
+        if (entry == NULL) {
+            fastpath_log_error("ipfwd module not found\n");
+            goto err_out;
+        }
+        ipfwd = entry->module;
+        
+        for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
+            node = nodeset->nodesetval->nodeTab[i];
+
+            entry = module_find((const char *)node->children->content);
+            if (entry == NULL) {
+                fastpath_log_error("interface module %s not found\n", 
+                    node->children->content);
+            }
+
+            ipfwd->connect(ipfwd, entry->module, &entry->param1); 
         }
     }
-
 err_out:      
     if (context) {
         xmlXPathFreeContext(context);
@@ -244,26 +273,5 @@ err_out:
     }
 
     return;
-
-
-    fastpath_log_info("%s %d\n", __func__, __LINE__);
-
-    for (port = 0; port < FASTPATH_MAX_NIC_PORTS; port ++) {
-        uint32_t n_rx_queues = fastpath_get_nic_rx_queues_per_port((uint8_t) port);
-
-        if (n_rx_queues == 0) {
-            continue;
-        }
-
-        eth[port] = ethernet_init(port, VLAN_MODE_TRUNK, 1);
-    }
-
-    br = bridge_init(1);
-    for (port = 0; port < FASTPATH_MAX_NIC_PORTS; port ++) {
-        if (eth[port] != NULL) {
-            br->connect(br, eth[port], (void *)&port);
-        }
-    }
-    
 }
 

@@ -45,26 +45,10 @@ void vlan_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct modu
     return;
 }
 
-int vlan_set_ethernet(struct module *vlan, struct module *eth)
-{
-    struct vlan_private *private;
-
-    if (vlan == NULL || eth == NULL) {
-        fastpath_log_error("vlan_set_ethernet: invalid vlan %p ethernet %p\n", 
-            vlan, eth);
-
-        return -EINVAL;
-    }
-    
-    private = (struct vlan_private *)vlan->private;
-    private->ethernet = eth;
-
-    return 0;
-}
-
 int vlan_connect(struct module *local, struct module *peer, void *param)
 {
-    struct bridge_private *private;
+    struct vlan_private *private;
+    RTE_SET_USED(param);
 
     if (local == NULL || peer == NULL) {
         fastpath_log_error("vlan_connect: invalid local %p peer %p\n", 
@@ -74,7 +58,7 @@ int vlan_connect(struct module *local, struct module *peer, void *param)
     
     fastpath_log_info("vlan_connect: local %s peer %s\n", local->name, peer->name);
 
-    private = local->private;
+    private = (struct vlan_private *)local->private;
 
     if (peer->type == MODULE_TYPE_BRIDGE) {
         private->bridge = peer;
@@ -90,20 +74,20 @@ int vlan_connect(struct module *local, struct module *peer, void *param)
     return 0;
 }
 
-int vlan_init(uint16_t vid)
+struct module* vlan_init(uint16_t vid)
 {
     struct module *vlan;
     struct vlan_private *private;
 
     if (vid > VLAN_VID_MASK) {
         fastpath_log_error("vlan_init: invalid vid %d\n", vid);
-        return -EINVAL;
+        return NULL;
     }
     
     vlan = rte_zmalloc(NULL, sizeof(struct module), 0);
     if (vlan == NULL) {
         fastpath_log_error("vlan_init: malloc module failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
     private = rte_zmalloc(NULL, sizeof(struct vlan_private), 0);
@@ -111,7 +95,7 @@ int vlan_init(uint16_t vid)
         rte_free(vlan);
         
         fastpath_log_error("vlan_init: malloc module failed\n");
-        return -ENOMEM;
+        return NULL;
     }
 
     vlan->type = MODULE_TYPE_VLAN;
@@ -123,6 +107,6 @@ int vlan_init(uint16_t vid)
 
     vlan_modules[vid] = vlan;
 
-    return 0;
+    return vlan;
 }
 
