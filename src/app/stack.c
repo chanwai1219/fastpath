@@ -13,6 +13,7 @@ struct module_entry {
 LIST_HEAD(, module_entry) module_list;
 
 void module_add(struct module *module, uint32_t param1, uint32_t param2);
+void print_modules(void);
 struct module_entry *module_find(const char *name);
 
 xmlNodePtr xml_get_child(xmlNodePtr node, const char *name)
@@ -115,6 +116,17 @@ void module_add(struct module *module, uint32_t param1, uint32_t param2)
     LIST_INSERT_HEAD(&module_list, entry, entry);
 }
 
+void print_modules(void)
+{
+    struct module_entry *entry;
+
+    fastpath_log_info("start to print modules\n");
+    
+    LIST_FOREACH(entry, &module_list, entry) {
+        fastpath_log_info("%s\n", entry->module->name);
+    }
+}
+
 struct module_entry *module_find(const char *name)
 {
     struct module_entry *entry;
@@ -132,6 +144,7 @@ void stack_setup(void)
 {
     int i;
     const char *str;
+    char expr[256];
     struct module *module;
     struct module_entry *entry;
     xmlDocPtr   doc = NULL; 
@@ -191,8 +204,7 @@ void stack_setup(void)
         goto err_out;
     }
     for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
-        uint16_t vid, created;
-        char s[32];
+        uint16_t pid, vid;
         xmlNodePtr member;
         
         node = nodeset->nodesetval->nodeTab[i];
@@ -200,14 +212,20 @@ void stack_setup(void)
         str = xml_get_param(node, "vlan", NULL);
         vid = strtoul(str, NULL, 0);
 
-        created = 0;
-
         for (member = node->children; member; member = member->next) {
             if (!strcmp((const char *)member->name, "port")) {
-                snprintf(s, sizeof(s), "%s.%d", member->children->content, vid);
-                printf("bridge %s member %s\n", xml_get_param(node, "name", NULL), s);
-                if (module_find(s) == NULL) {
-                    module = vlan_init(vid);
+                pid = strtoul((const char *)&member->children->content[4], NULL, 0);
+
+                snprintf(expr, sizeof(expr), "//port-list/ethernet[name='%s']/native", 
+                    member->children->content);
+                node = xml_get_node(context, expr, NULL);
+                if (strtoul((const char *)node->children->content, NULL, 0) == vid) {
+                    continue;
+                }
+                
+                snprintf(expr, sizeof(expr), "%s.%d", member->children->content, vid);
+                if (module_find(expr) == NULL) {
+                    module = vlan_init(pid, vid);
                     module_add(module, vid, 0);
                 }
             }
@@ -243,6 +261,7 @@ void stack_setup(void)
     nodeset = xml_get_nodeset(context, "//ip-forward/interface");
     if (nodeset != NULL) {
         struct module *ipfwd;
+        struct module *eif;
 
         entry = module_find("ipfwd");
         if (entry == NULL) {
@@ -259,10 +278,77 @@ void stack_setup(void)
                 fastpath_log_error("interface module %s not found\n", 
                     node->children->content);
             }
+            eif = entry->module;
 
-            ipfwd->connect(ipfwd, entry->module, &entry->param1); 
+            ipfwd->connect(ipfwd, eif, &entry->param1); 
         }
     }
+
+    nodeset = xml_get_nodeset(context, "//interface-list/interface");
+    if (nodeset != NULL) {
+        struct module *eif;
+        struct module *br;
+
+        for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
+            node = nodeset->nodesetval->nodeTab[i];
+
+            str = xml_get_param(node, "name", NULL);
+            entry = module_find(str);
+            eif = entry->module;
+
+            snprintf(expr, 256, "//bridge-list/bridge[interface='%s']", str);
+            node = xml_get_node(context, expr, NULL);
+            str = xml_get_param(node, "name", NULL);
+            entry = module_find(str);
+            br = entry->module;
+
+            eif->connect(eif, br, NULL);
+        }
+    }
+
+    nodeset = xml_get_nodeset(context, "//bridge-list/bridge");
+    for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
+        uint32_t vid, pid = 0;
+        xmlNodePtr member;
+        struct module *br, *vlan, *eth;
+        
+        node = nodeset->nodesetval->nodeTab[i];
+
+        str = xml_get_param(node, "name", NULL);
+        entry = module_find(str);
+        br = entry->module;
+
+        str = xml_get_param(node, "vlan", NULL);
+        vid = strtoul(str, NULL, 0);
+
+        for (member = node->children; member; member = member->next) {
+            if (!strcmp((const char *)member->name, "port")) {
+                snprintf(expr, sizeof(expr), "//port-list/ethernet[name='%s']/native", 
+                    member->children->content);
+                node = xml_get_node(context, expr, NULL);
+                if (strtoul((const char *)node->children->content, NULL, 0) == vid) {
+                    entry = module_find((const char *)member->children->content);
+                    eth = entry->module;
+
+                    br->connect(br, eth, &pid);
+                    pid++;
+                } else {
+                    snprintf(expr, sizeof(expr), "%s.%d", member->children->content, vid);
+                    entry = module_find(expr);
+                    vlan = entry->module;
+
+                    entry = module_find((const char *)member->children->content);
+                    eth = entry->module;
+                    
+                    br->connect(br, vlan, &pid);
+                    pid++;
+
+                    vlan->connect(vlan, eth, &vid);
+                }
+            }
+        }
+    }
+    
 err_out:      
     if (context) {
         xmlXPathFreeContext(context);

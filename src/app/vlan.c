@@ -63,9 +63,10 @@ int vlan_connect(struct module *local, struct module *peer, void *param)
     if (peer->type == MODULE_TYPE_BRIDGE) {
         private->bridge = peer;
     } else if (peer->type == MODULE_TYPE_ETHERNET) {
+        uint16_t vid = *(uint16_t *)param;
         private->ethernet = peer;
 
-        peer->connect(peer, local, NULL);
+        peer->connect(peer, local, &vid);
     } else {
         fastpath_log_error("vlan_connect: invalid peer type %d\n", peer->type);
         return -ENOENT;
@@ -74,7 +75,7 @@ int vlan_connect(struct module *local, struct module *peer, void *param)
     return 0;
 }
 
-struct module* vlan_init(uint16_t vid)
+struct module* vlan_init(uint16_t port, uint16_t vid)
 {
     struct module *vlan;
     struct vlan_private *private;
@@ -83,6 +84,8 @@ struct module* vlan_init(uint16_t vid)
         fastpath_log_error("vlan_init: invalid vid %d\n", vid);
         return NULL;
     }
+
+    fastpath_log_info("vlan_init: vlan %d\n", vid);
     
     vlan = rte_zmalloc(NULL, sizeof(struct module), 0);
     if (vlan == NULL) {
@@ -98,8 +101,11 @@ struct module* vlan_init(uint16_t vid)
         return NULL;
     }
 
+    vlan->receive = vlan_receive;
+    vlan->transmit = vlan_xmit;
+    vlan->connect = vlan_connect;
     vlan->type = MODULE_TYPE_VLAN;
-    snprintf(vlan->name, sizeof(vlan->name), "vlan%d", vid);
+    snprintf(vlan->name, sizeof(vlan->name), "vEth%d.%d", port, vid);
     
     private->vid = vid;
     

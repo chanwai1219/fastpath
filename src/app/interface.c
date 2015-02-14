@@ -253,6 +253,9 @@ struct module * interface_init(uint16_t ifidx)
         return NULL;
     }
 
+    iface->receive = interface_receive;
+    iface->transmit = interface_xmit;
+    iface->connect = interface_connect;
     iface->type = MODULE_TYPE_INTERFACE;
     snprintf(iface->name, sizeof(iface->name), "eif%d", ifidx);
 
