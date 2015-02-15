@@ -42,13 +42,13 @@ include $(RTE_SDK)/mk/rte.vars.mk
 APP = fastpath
 
 # all source are stored in SRCS-y
-SRCS-y := main.c runtime.c config.c init.c log.c utils.c ethernet.c vlan.c bridge.c interface.c ipfwd.c stack.c
+SRCS-y := main.c runtime.c config.c init.c log.c utils.c ethernet.c vlan.c bridge.c interface.c route.c stack.c
 
 CFLAGS += -g -O0 $(WERROR_FLAGS)
 CFLAGS += -I$(SRCDIR)/include
 
-CFLAGS += -I$(SRCDIR)/../lib/libxml2-2.9.2/include
-LDFLAGS += -L$(SRCDIR)/../lib/libxml2-2.9.2/.libs -lxml2
+CFLAGS += -I$(SRCDIR)/../lib/libxml2-2.7.6/include
+LDFLAGS += -L$(SRCDIR)/../lib/libxml2-2.7.6/.libs -lxml2
 
 
 include $(RTE_SDK)/mk/rte.extapp.mk

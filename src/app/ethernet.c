@@ -13,6 +13,10 @@ struct ethernet_private {
 struct module *ethernet_modules[FASTPATH_MAX_NIC_PORTS];
 
 static struct module * find_ethernet(uint32_t port);
+static uint64_t flowkey_hash(
+    void *key,
+    __attribute__((unused)) uint32_t key_size,
+    __attribute__((unused)) uint64_t seed);
 
 static struct module * find_ethernet(uint32_t port)
 {    
@@ -60,7 +64,7 @@ fastpath_pkt_metadata_fill(struct rte_mbuf *m)
     c->protocol = rte_be_to_cpu_16(eth_hdr->ether_type);
 
     if (c->protocol == ETHER_TYPE_VLAN) {
-        ip_hdr = (struct ipv4_hdr *)((uint8_t *)eth_hdr + sizeof(vlan_hdr));
+        ip_hdr = (struct ipv4_hdr *)((uint8_t *)eth_hdr + sizeof(struct vlan_hdr));
     } else {
         ip_hdr = (struct ipv4_hdr *)(eth_hdr + 1);
     }
@@ -104,8 +108,6 @@ void ethernet_receive(struct rte_mbuf *m, __rte_unused struct module *peer, stru
 
     eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
     rte_pktmbuf_adj(m, (uint16_t)sizeof(struct ether_hdr));
-    m->l2_len = 0;
-    m->l3_len = sizeof(struct ipv4_hdr);
     vlan_hdr = rte_pktmbuf_mtod(m, struct vlan_hdr *);
 
     if (ntohs(eth_hdr->ether_type) == ETHER_TYPE_VLAN) {

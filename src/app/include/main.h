@@ -240,6 +240,10 @@
 #define IP_FRAG_TBL_BUCKET_ENTRIES    16
 #endif
 
+#ifndef FASTPATH_LPM_MAX_NEXT_HOPS
+#define FASTPATH_LPM_MAX_NEXT_HOPS     256
+#endif
+
 #define MAX_FLOW_NUM    UINT16_MAX
 #define MIN_FLOW_NUM    1
 #define DEF_FLOW_NUM    0x1000

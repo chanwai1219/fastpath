@@ -217,7 +217,7 @@ int interface_connect(struct module *local, struct module *peer, void *param)
         private->bridge = peer;
         
         peer->connect(peer, local, NULL);
-    } else if (peer->type == MODULE_TYPE_IPFWD) {
+    } else if (peer->type == MODULE_TYPE_ROUTE) {
         private->ipv4 = peer;
         private->ipv6 = peer;
     } else {

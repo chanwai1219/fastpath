@@ -47,6 +47,7 @@
 #include <rte_debug.h>
 #include <rte_ether.h>
 #include <rte_ethdev.h>
+#include <rte_port.h>
 #include <rte_ring.h>
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
@@ -109,7 +110,7 @@ enum {
     MODULE_TYPE_VLAN,
     MODULE_TYPE_BRIDGE,
     MODULE_TYPE_INTERFACE,
-    MODULE_TYPE_IPFWD,
+    MODULE_TYPE_ROUTE,
 };
 
 struct msg_hdr {
@@ -202,7 +203,7 @@ struct fastpath_pkt_metadata {
 #include "vlan.h"
 #include "bridge.h"
 #include "interface.h"
-#include "ipfwd.h"
+#include "route.h"
 
 #endif /* __FASTPATH_H__ */
 
