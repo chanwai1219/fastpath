@@ -24,6 +24,55 @@ static struct module * find_ethernet(uint32_t port)
     return ethernet_modules[port];
 }
 
+uint64_t flowkey_hash(
+    void *key,
+    __attribute__((unused)) uint32_t key_size,
+    __attribute__((unused)) uint64_t seed)
+{
+    struct fastpath_flow_key *flow_key = (struct fastpath_flow_key *) key;
+    uint32_t ip_dst = rte_be_to_cpu_32(flow_key->ip_dst);
+    uint64_t signature = (ip_dst & 0x00FFFFFFLLU) >> 2;
+
+    return signature;
+}
+
+static inline void
+fastpath_pkt_metadata_fill(struct rte_mbuf *m)
+{
+    uint8_t *m_data = rte_pktmbuf_mtod(m, uint8_t *);
+    struct fastpath_pkt_metadata *c =
+        (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
+    struct ether_hdr *eth_hdr;
+    struct ipv4_hdr *ip_hdr;
+    uint64_t *ipv4_hdr_slab;
+
+    if (m->ol_flags & (PKT_RX_VLAN_PKT)) {
+        ip_hdr = (struct ipv4_hdr *) 
+            &m_data[sizeof(struct ether_hdr) + sizeof(struct vlan_hdr)];
+    } else {
+        ip_hdr = (struct ipv4_hdr *) &m_data[sizeof(struct ether_hdr)];
+    }
+
+    eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr*);
+
+    c->mac_header = (uint8_t *)eth_hdr;
+    c->network_header = (uint8_t *)(eth_hdr + 1);
+    c->protocol = rte_be_to_cpu_16(eth_hdr->ether_type);
+
+    if (c->protocol == ETHER_TYPE_VLAN) {
+        ip_hdr = (struct ipv4_hdr *)((uint8_t *)eth_hdr + sizeof(vlan_hdr));
+    } else {
+        ip_hdr = (struct ipv4_hdr *)(eth_hdr + 1);
+    }
+    
+    ipv4_hdr_slab = (uint64_t *)ip_hdr;
+    
+    /* TTL and Header Checksum are set to 0 */
+    c->flow_key.slab0 = ipv4_hdr_slab[1] & 0xFFFFFFFF0000FF00LLU;
+    c->flow_key.slab1 = ipv4_hdr_slab[2];
+    c->signature = flowkey_hash((void *) &c->flow_key, 0, 0);
+}
+
 void ethernet_input(struct rte_mbuf *m)
 {
     struct module *eth;
@@ -35,6 +84,8 @@ void ethernet_input(struct rte_mbuf *m)
         rte_pktmbuf_free(m);
         return;
     }
+
+    fastpath_pkt_metadata_fill(m);
 
     ethernet_receive(m, NULL, eth);
 
@@ -53,27 +104,29 @@ void ethernet_receive(struct rte_mbuf *m, __rte_unused struct module *peer, stru
 
     eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
     rte_pktmbuf_adj(m, (uint16_t)sizeof(struct ether_hdr));
+    m->l2_len = 0;
+    m->l3_len = sizeof(struct ipv4_hdr);
     vlan_hdr = rte_pktmbuf_mtod(m, struct vlan_hdr *);
 
     if (ntohs(eth_hdr->ether_type) == ETHER_TYPE_VLAN) {
         vid = ntohs(vlan_hdr->vlan_tci);
         
         if (private->mode == VLAN_MODE_ACCESS) {
-            fastpath_log_error("access vlan %s receive packet vid %x, drop\n", 
+            fastpath_log_error("access port %s receive packet vid %x, drop\n", 
                 eth->name, vid);
             rte_pktmbuf_free(m);
             return;
         } else {
-            fastpath_log_debug("trunk vlan %s receive packet vid %x\n", eth->name, vid);
+            fastpath_log_debug("trunk port %s receive packet vid %x\n", eth->name, vid);
 
             SEND_PKT(m, eth, private->vlan[vid], PKT_DIR_RECV);
         }
     } else {
         if (private->mode == VLAN_MODE_ACCESS) {
-            fastpath_log_debug("access vlan %s receive untagged packet, send to %d\n",
+            fastpath_log_debug("access port %s receive untagged packet, send to %d\n",
                 eth->name, private->native);
         } else {
-            fastpath_log_debug("trunk vlan %s receive untagged packet, send to %d\n",
+            fastpath_log_debug("trunk port %s receive untagged packet, send to %d\n",
                 eth->name, private->native);
         }
         SEND_PKT(m, eth, private->bridge, PKT_DIR_RECV);
@@ -110,23 +163,23 @@ void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct 
         lp->mbuf_out[port].n_mbufs = n_mbufs;
     } else {
         n_pkts = rte_eth_tx_burst(
-				port,
-				lp->tx_queue_id[port],
-				lp->mbuf_out[port].array,
-				(uint16_t) n_mbufs);
+                port,
+                lp->tx_queue_id[port],
+                lp->mbuf_out[port].array,
+                (uint16_t) n_mbufs);
 
         if (unlikely(n_pkts < n_mbufs)) {
-			uint32_t k;
+            uint32_t k;
             fastpath_log_error("ethernet_xmit: send pkt failed, success %d expected %d",
                 n_pkts, n_mbufs);
-			for (k = n_pkts; k < n_mbufs; k ++) {
-				struct rte_mbuf *pkt_to_free = lp->mbuf_out[port].array[k];
-				rte_pktmbuf_free(pkt_to_free);
-			}
-		}
+            for (k = n_pkts; k < n_mbufs; k ++) {
+                struct rte_mbuf *pkt_to_free = lp->mbuf_out[port].array[k];
+                rte_pktmbuf_free(pkt_to_free);
+            }
+        }
         
-		lp->mbuf_out[port].n_mbufs = 0;
-		lp->mbuf_out_flush[port] = 0;
+        lp->mbuf_out[port].n_mbufs = 0;
+        lp->mbuf_out_flush[port] = 0;
     }
 
     return;

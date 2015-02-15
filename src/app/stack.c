@@ -237,7 +237,7 @@ void stack_setup(void)
 
     /* interface */
     nodeset = xml_get_nodeset(context, "//interface-list/interface");
-    if (nodeset == NULL || nodeset->nodesetval->nodeNr > IPFWD_MAX_LINK) {
+    if (nodeset == NULL || nodeset->nodesetval->nodeNr > ROUTE_MAX_LINK) {
         fastpath_log_error("get interface failed\n");
         goto err_out;
     }
@@ -254,21 +254,21 @@ void stack_setup(void)
     }
 
     /* ip forward */
-    module = ipfwd_init();
+    module = route_init();
     module_add(module, 0, 0);
 
     /* connect modules */
     nodeset = xml_get_nodeset(context, "//ip-forward/interface");
     if (nodeset != NULL) {
-        struct module *ipfwd;
+        struct module *route;
         struct module *eif;
 
-        entry = module_find("ipfwd");
+        entry = module_find("route");
         if (entry == NULL) {
-            fastpath_log_error("ipfwd module not found\n");
+            fastpath_log_error("route module not found\n");
             goto err_out;
         }
-        ipfwd = entry->module;
+        route = entry->module;
         
         for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
             node = nodeset->nodesetval->nodeTab[i];
@@ -280,7 +280,7 @@ void stack_setup(void)
             }
             eif = entry->module;
 
-            ipfwd->connect(ipfwd, eif, &entry->param1); 
+            route->connect(route, eif, &entry->param1); 
         }
     }
 

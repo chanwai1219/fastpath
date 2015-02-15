@@ -80,7 +80,7 @@
 #endif
 
 #ifndef FASTPATH_DEFAULT_INDIRECT_MBUF_SIZE
-#define FASTPATH_DEFAULT_INDIRECT_MBUF_SIZE (sizeof(struct rte_mbuf))
+#define FASTPATH_DEFAULT_INDIRECT_MBUF_SIZE (sizeof(struct rte_mbuf) + sizeof(struct fastpath_pkt_metadata))
 #endif
 
 #ifndef FASTPATH_DEFAULT_MEMPOOL_BUFFERS

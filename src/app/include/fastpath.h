@@ -156,6 +156,48 @@ enum {
         } \
     } while (0)
 
+struct fastpath_flow_key {
+    union {
+        struct {
+            uint8_t ttl; /* needs to be set to 0 */
+            uint8_t proto;
+            uint16_t header_checksum; /* needs to be set to 0 */
+            uint32_t ip_src;
+        };
+        uint64_t slab0;
+    };
+
+    union {
+        struct {
+            uint32_t ip_dst;
+            uint16_t port_src;
+            uint16_t port_dst;
+        };
+        uint64_t slab1;
+    };
+} __attribute__((__packed__));
+
+struct fastpath_arp_key {
+    uint32_t nh_ip;
+    uint32_t nh_iface;
+} __attribute__((__packed__));
+
+struct fastpath_pkt_metadata {
+    uint32_t signature;
+    uint16_t protocol;
+    uint8_t reserved1[10];
+
+    uint8_t *mac_header;
+    uint8_t *network_header;
+
+    struct fastpath_flow_key flow_key;
+
+    struct fastpath_arp_key arp_key;
+    struct ether_addr nh_arp;
+
+    uint8_t reserved3[2];
+} __attribute__((__packed__));
+
 #include "ethernet.h"
 #include "vlan.h"
 #include "bridge.h"
