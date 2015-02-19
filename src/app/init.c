@@ -33,6 +33,15 @@
 
 #include "fastpath.h"
 
+/* Max size of a single packet */
+#define MAX_PACKET_SZ           2048
+
+/* Total octets in ethernet header */
+#define KNI_ENET_HEADER_SIZE    14
+
+/* Total octets in the FCS */
+#define KNI_ENET_FCS_SIZE       4
+
 static struct rte_eth_conf port_conf = {
     .rxmode = {
         .mq_mode    = ETH_MQ_RX_RSS,
@@ -399,12 +408,162 @@ fastpath_init_nics(void)
             rte_panic("Cannot start port %d (%d)\n", port, ret);
         }
     }
-
-    check_all_ports_link_status(FASTPATH_MAX_NIC_PORTS, (~0x0));
 }
 
-void
-fastpath_init(void)
+/* Callback for request of changing MTU */
+static int
+kni_change_mtu(uint8_t port_id, unsigned new_mtu)
+{
+    int ret;
+    struct rte_eth_conf conf;
+
+    if (port_id >= rte_eth_dev_count()) {
+        fastpath_log_error("Invalid port id %d\n", port_id);
+        return -EINVAL;
+    }
+
+    fastpath_log_info("Change MTU of port %d to %u\n", port_id, new_mtu);
+
+    /* Stop specific port */
+    rte_eth_dev_stop(port_id);
+
+    memcpy(&conf, &port_conf, sizeof(conf));
+    /* Set new MTU */
+    if (new_mtu > ETHER_MAX_LEN)
+        conf.rxmode.jumbo_frame = 1;
+    else
+        conf.rxmode.jumbo_frame = 0;
+
+    /* mtu + length of header + length of FCS = max pkt length */
+    conf.rxmode.max_rx_pkt_len = new_mtu + KNI_ENET_HEADER_SIZE +
+                            KNI_ENET_FCS_SIZE;
+    ret = rte_eth_dev_configure(port_id, 1, 1, &conf);
+    if (ret < 0) {
+        fastpath_log_error("Fail to reconfigure port %d\n", port_id);
+        return ret;
+    }
+
+    /* Restart specific port */
+    ret = rte_eth_dev_start(port_id);
+    if (ret < 0) {
+        fastpath_log_error("Fail to restart port %d\n", port_id);
+        return ret;
+    }
+
+    return 0;
+}
+
+/* Callback for request of configuring network interface up/down */
+static int
+kni_config_network_interface(uint8_t port_id, uint8_t if_up)
+{
+    int ret = 0;
+
+    if (port_id >= rte_eth_dev_count() || port_id >= RTE_MAX_ETHPORTS) {
+        fastpath_log_error("Invalid port id %d\n", port_id);
+        return -EINVAL;
+    }
+
+    fastpath_log_info("Configure network interface of %d %s\n",
+                    port_id, if_up ? "up" : "down");
+
+    if (if_up != 0) { /* Configure network interface up */
+        rte_eth_dev_stop(port_id);
+        ret = rte_eth_dev_start(port_id);
+    } else /* Configure network interface down */
+        rte_eth_dev_stop(port_id);
+
+    if (ret < 0)
+        fastpath_log_error("Failed to start port %d\n", port_id);
+
+    return ret;
+}
+
+static int kni_alloc(uint8_t port_id)
+{
+    struct rte_kni *kni;
+    struct rte_kni_conf conf;
+    struct rte_kni_ops ops;
+    struct rte_eth_dev_info dev_info;
+    struct rte_mempool *mp;
+
+    if (port_id >= FASTPATH_MAX_NIC_PORTS)
+        return -1;
+
+    if (fastpath.kni[port_id] != NULL)
+        rte_exit(EXIT_FAILURE, "Kni port %d already initialized\n", port_id);
+
+    printf("Initialising kni port %u ...\n", (unsigned)port_id);
+
+    /* Clear conf at first */
+    memset(&conf, 0, sizeof(conf));
+    snprintf(conf.name, RTE_KNI_NAMESIZE, "vEth%u", port_id);
+    conf.group_id = (uint16_t)port_id;
+    conf.mbuf_size = MAX_PACKET_SZ;
+
+    memset(&dev_info, 0, sizeof(dev_info));
+    rte_eth_dev_info_get(port_id, &dev_info);
+    conf.addr = dev_info.pci_dev->addr;
+    conf.id = dev_info.pci_dev->id;
+
+    memset(&ops, 0, sizeof(ops));
+    ops.port_id = port_id;
+    ops.change_mtu = kni_change_mtu;
+    ops.config_network_if = kni_config_network_interface;
+
+    mp = fastpath.pktbuf_pools[rte_socket_id()];
+    
+    kni = rte_kni_alloc(mp, &conf, &ops);
+    if (!kni)
+        rte_exit(EXIT_FAILURE, "Fail to create kni for port: %d\n", port_id);
+    
+    fastpath.kni[port_id] = kni;
+
+    return 0;
+}
+
+static int kni_free_kni(uint8_t port_id)
+{
+    if (port_id >= FASTPATH_MAX_NIC_PORTS || !fastpath.kni[port_id])
+        return -1;
+
+    rte_kni_release(fastpath.kni[port_id]);
+    fastpath.kni[port_id] = NULL;
+    
+    rte_eth_dev_stop(port_id);
+
+    return 0;
+}
+
+static void
+fastpath_init_knis(void)
+{
+    uint8_t nb_sys_ports, port;
+    uint32_t n_rx_queues;
+
+    /* Initialize KNI subsystem */
+    nb_sys_ports = rte_eth_dev_count();
+
+    /* Invoke rte KNI init to preallocate the ports */
+    rte_kni_init(nb_sys_ports);
+
+    /* Initialise each port */
+    for (port = 0; port < nb_sys_ports; port++) {
+        n_rx_queues = fastpath_get_nic_rx_queues_per_port(port);
+
+        if (n_rx_queues == 0) {
+            continue;
+        }
+        
+        if (port >= FASTPATH_MAX_NIC_PORTS)
+            rte_exit(EXIT_FAILURE, "Can not use more than "
+                "%d ports for kni\n", FASTPATH_MAX_NIC_PORTS);
+
+        kni_alloc(port);
+    }
+}
+
+void fastpath_init(void)
 {
     fastpath_assign_worker_ids();
     fastpath_init_frag_tables();
@@ -412,10 +571,22 @@ fastpath_init(void)
     fastpath_init_indirect_mbuf_pools();
     fastpath_init_rings();
     fastpath_init_nics();
+    fastpath_init_knis();
+    fastpath_init_stack();
 
-    stack_setup();
+    check_all_ports_link_status(FASTPATH_MAX_NIC_PORTS, (~0x0));
 
     fastpath_log_set_screen_level(LOG_LEVEL);
 
     printf("Initialization completed.\n");
 }
+
+void fastpath_cleanup(void)
+{
+    uint32_t port;
+    
+    for (port = 0; port < FASTPATH_MAX_NIC_PORTS; port++) {
+        kni_free_kni(port);
+    }
+}
+

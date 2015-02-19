@@ -36,36 +36,39 @@
 int
 main(int argc, char **argv)
 {
-	uint32_t lcore;
-	int ret;
+    uint32_t lcore;
+    int ret;
 
     fastpath_init_log();
 
-	/* Init EAL */
-	ret = rte_eal_init(argc, argv);
-	if (ret < 0)
-		return -1;
-	argc -= ret;
-	argv += ret;
+    /* Init EAL */
+    ret = rte_eal_init(argc, argv);
+    if (ret < 0)
+        return -1;
+    argc -= ret;
+    argv += ret;
 
-	/* Parse application arguments (after the EAL ones) */
-	ret = fastpath_parse_args(argc, argv);
-	if (ret < 0) {
-		fastpath_print_usage();
-		return -1;
-	}
+    /* Parse application arguments (after the EAL ones) */
+    ret = fastpath_parse_args(argc, argv);
+    if (ret < 0) {
+        fastpath_print_usage();
+        return -1;
+    }
 
-	/* Init */
-	fastpath_init();
-	fastpath_print_params();
+    /* Init */
+    fastpath_init();
+    fastpath_print_params();
 
-	/* Launch per-lcore init on every slave lcore */
-	rte_eal_mp_remote_launch(fastpath_main_loop, NULL, CALL_MASTER);
-	RTE_LCORE_FOREACH_SLAVE(lcore) {
-		if (rte_eal_wait_lcore(lcore) < 0) {
-			return -1;
-		}
-	}
+    /* Launch per-lcore init on every slave lcore */
+    rte_eal_mp_remote_launch(fastpath_main_loop, NULL, CALL_MASTER);
+    RTE_LCORE_FOREACH_SLAVE(lcore) {
+        if (rte_eal_wait_lcore(lcore) < 0) {
+            return -1;
+        }
+    }
 
-	return 0;
+    /* Release resources */
+    fastpath_cleanup();
+
+    return 0;
 }

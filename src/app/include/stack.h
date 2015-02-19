@@ -9,7 +9,7 @@ xmlNodePtr xml_get_node(xmlXPathContextPtr context, const char *path, int *dup);
 
 struct module *module_get_by_name(const char *name);
 
-void stack_setup(void);
+void fastpath_init_stack(void);
 
 #endif
 

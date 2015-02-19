@@ -183,14 +183,15 @@ void bridge_receive(struct rte_mbuf *m,
     }
 }
 
-void bridge_xmit(struct rte_mbuf *m, 
-    __rte_unused struct module *peer, struct module *br)
+void bridge_xmit(struct rte_mbuf *m, struct module *peer, struct module *br)
 {
     struct bridge_fdb_entry *entry;
     struct ether_hdr *eth_hdr;
     struct bridge_private *private = (struct bridge_private *)br->private;
     struct fastpath_pkt_metadata *c =
         (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
+
+    RTE_SET_USED(peer);
 
     eth_hdr = (struct ether_hdr *)c->mac_header;
 

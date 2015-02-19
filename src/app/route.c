@@ -426,9 +426,9 @@ void route_receive(struct rte_mbuf *m,
     }
 }
 
-void route_xmit(struct rte_mbuf *m, 
-    __rte_unused struct module *peer, struct module *route)
+void route_xmit(struct rte_mbuf *m, struct module *peer, struct module *route)
 {
+    RTE_SET_USED(peer);
     RTE_SET_USED(route);
     
     fastpath_log_error("no protocol installed for now, may be later\n");

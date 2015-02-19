@@ -59,6 +59,7 @@
 #include <rte_lpm6.h>
 #include <rte_string_fns.h>
 #include <rte_spinlock.h>
+#include <rte_kni.h>
 
 #include "libxml/list.h"
 #include "libxml/parser.h"

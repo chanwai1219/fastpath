@@ -153,7 +153,7 @@ struct module_entry *module_find(const char *name)
     return NULL;
 }
 
-void stack_setup(void)
+void fastpath_init_stack(void)
 {
     int i;
     const char *str;

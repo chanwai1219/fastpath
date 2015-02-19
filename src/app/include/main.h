@@ -355,6 +355,9 @@ struct fastpath_params {
     /* load balancing */
     uint8_t pos_lb;
     uint8_t numa_on;
+
+    /* kni params */
+    struct rte_kni *kni[FASTPATH_MAX_NIC_PORTS];
 } __rte_cache_aligned;
 
 extern struct fastpath_params fastpath;
@@ -362,6 +365,7 @@ extern struct fastpath_params fastpath;
 int fastpath_parse_args(int argc, char **argv);
 void fastpath_print_usage(void);
 void fastpath_init(void);
+void fastpath_cleanup(void);
 int fastpath_main_loop(void *arg);
 
 int fastpath_get_nic_rx_queues_per_port(uint8_t port);

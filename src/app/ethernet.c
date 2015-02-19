@@ -98,12 +98,14 @@ void ethernet_input(struct rte_mbuf *m)
     return;
 }
 
-void ethernet_receive(struct rte_mbuf *m, __rte_unused struct module *peer, struct module *eth)
+void ethernet_receive(struct rte_mbuf *m, struct module *peer, struct module *eth)
 {
     uint32_t vid;
     struct ether_hdr *eth_hdr;
     struct vlan_hdr  *vlan_hdr;
     struct ethernet_private *private = (struct ethernet_private *)eth->private;
+
+    RTE_SET_USED(peer);
 
     fastpath_log_debug("lcore %d ethernet %s receive packet segments %d length %d\n", 
         rte_lcore_id(), eth->name, m->nb_segs, m->pkt_len);
