@@ -13,6 +13,18 @@ enum {
     ROUTE_MSG_DEL_NH6,
 };
 
+struct arp_add {
+    uint32_t nh_ip;
+    uint32_t nh_iface;
+    uint16_t type;
+    struct ether_addr nh_arp;
+};
+
+struct arp_del {
+    uint32_t nh_ip;
+    uint32_t nh_iface;
+};
+
 struct route_add {
     uint32_t ip;
     uint8_t depth;

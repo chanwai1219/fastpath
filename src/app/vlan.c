@@ -16,9 +16,11 @@ void vlan_receive(struct rte_mbuf *m, __rte_unused struct module *peer, struct m
     struct vlan_private *private = (struct vlan_private *)vlan->private;
 
     rte_pktmbuf_adj(m, (uint16_t)sizeof(struct vlan_hdr));
+#if 0
     memmove(rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr), 
         rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr) - sizeof(struct vlan_hdr), 
         2 * sizeof(struct ether_addr));
+#endif
 
     SEND_PKT(m, vlan, private->bridge, PKT_DIR_RECV);
     
@@ -30,15 +32,17 @@ void vlan_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct modu
     struct ether_hdr *eth_hdr;
     struct vlan_hdr  *vlan_hdr;
     struct vlan_private *private = (struct vlan_private *)vlan->private;
+
+    fastpath_log_debug("vlan %s add 8021q tag %d to packet\n", vlan->name, private->vid);
     
     rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct vlan_hdr));
     memmove(rte_pktmbuf_mtod(m, void *), 
         rte_pktmbuf_mtod(m, char *) + sizeof(struct vlan_hdr), 
         2 * sizeof(struct ether_addr));
     eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
+    eth_hdr->ether_type = rte_cpu_to_be_16(ETHER_TYPE_VLAN);
     vlan_hdr = (struct vlan_hdr *)(eth_hdr + 1);
     vlan_hdr->vlan_tci = rte_cpu_to_be_16(private->vid);
-    vlan_hdr->eth_proto = rte_cpu_to_be_16(ETHER_TYPE_VLAN);    
     
     SEND_PKT(m, vlan, private->ethernet, PKT_DIR_XMIT);
     

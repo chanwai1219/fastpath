@@ -69,13 +69,14 @@ void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *i
 
     RTE_SET_USED(peer);
 
+    c->network_header = rte_pktmbuf_mtod(m, uint8_t *);
+
     private = (struct interface_private *)iface->private;
 
     if (c->protocol == ETHER_TYPE_IPv4) {
         ipv4_hdr = rte_pktmbuf_mtod(m, struct ipv4_hdr *);
 
-        fastpath_log_debug("interface %s receive pkt "NIPQUAD_FMT" ==> "NIPQUAD_FMT"\n",
-            iface->name, NIPQUAD(ipv4_hdr->src_addr), NIPQUAD(ipv4_hdr->dst_addr));
+        fastpath_log_debug("interface %s receive packet\n", iface->name);
 
         /* Check to make sure the packet is valid (RFC1812) */
         if (is_valid_ipv4_pkt(ipv4_hdr, m->pkt_len) < 0) {
@@ -143,6 +144,8 @@ void interface_xmit(struct rte_mbuf *m, struct module *peer, struct module *ifac
     int socketid = rte_socket_id();
     struct rte_mbuf *pkts_out[MAX_FRAG_NUM];
     struct interface_private *private = (struct interface_private *)iface->private;
+    struct fastpath_pkt_metadata *c =
+        (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
 
     RTE_SET_USED(peer);
 
@@ -152,7 +155,9 @@ void interface_xmit(struct rte_mbuf *m, struct module *peer, struct module *ifac
         return;
     }
 
-    if (m->ol_flags & PKT_RX_IPV4_HDR) {
+    if (c->protocol == ETHER_TYPE_IPv4) {
+        fastpath_log_debug("interface %s receive ipv4 packet\n", iface->name);
+        
         /* if we don't need to do any fragmentation */
         if (likely (IPV4_MTU_DEFAULT >= m->pkt_len)) {
             SEND_PKT(m, iface, private->bridge, PKT_DIR_XMIT);
@@ -174,7 +179,9 @@ void interface_xmit(struct rte_mbuf *m, struct module *peer, struct module *ifac
                 SEND_PKT(pkts_out[i], iface, private->bridge, PKT_DIR_XMIT);
             }
         }
-    } else if (m->ol_flags & PKT_RX_IPV6_HDR) {
+    } else if (c->protocol == ETHER_TYPE_IPv6) {
+        fastpath_log_debug("interface %d receive ipv6 packet\n", iface->name);
+        
         /* if we don't need to do any fragmentation */
         if (likely (IPV6_MTU_DEFAULT >= m->pkt_len)) {
             SEND_PKT(m, iface, private->bridge, PKT_DIR_XMIT);
@@ -196,6 +203,9 @@ void interface_xmit(struct rte_mbuf *m, struct module *peer, struct module *ifac
                 SEND_PKT(pkts_out[i], iface, private->bridge, PKT_DIR_XMIT);
             }
         }
+    } else {
+        fastpath_log_error("interface_xmit: unknown protocol %d, drop packet\n", c->protocol);
+        rte_pktmbuf_free(m);
     }
 }
 

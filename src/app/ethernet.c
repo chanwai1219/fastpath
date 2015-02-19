@@ -43,12 +43,14 @@ uint64_t flowkey_hash(
 static inline void
 fastpath_pkt_metadata_fill(struct rte_mbuf *m)
 {
-    uint8_t *m_data = rte_pktmbuf_mtod(m, uint8_t *);
     struct fastpath_pkt_metadata *c =
         (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
     struct ether_hdr *eth_hdr;
     struct ipv4_hdr *ip_hdr;
     uint64_t *ipv4_hdr_slab;
+
+#if 0
+    uint8_t *m_data = rte_pktmbuf_mtod(m, uint8_t *);
 
     if (m->ol_flags & (PKT_RX_VLAN_PKT)) {
         ip_hdr = (struct ipv4_hdr *) 
@@ -56,11 +58,11 @@ fastpath_pkt_metadata_fill(struct rte_mbuf *m)
     } else {
         ip_hdr = (struct ipv4_hdr *) &m_data[sizeof(struct ether_hdr)];
     }
+#endif
 
     eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr*);
 
     c->mac_header = (uint8_t *)eth_hdr;
-    c->network_header = (uint8_t *)(eth_hdr + 1);
     c->protocol = rte_be_to_cpu_16(eth_hdr->ether_type);
 
     if (c->protocol == ETHER_TYPE_VLAN) {
@@ -105,6 +107,8 @@ void ethernet_receive(struct rte_mbuf *m, __rte_unused struct module *peer, stru
 
     fastpath_log_debug("lcore %d ethernet %s receive packet segments %d length %d\n", 
         rte_lcore_id(), eth->name, m->nb_segs, m->pkt_len);
+
+    rte_pktmbuf_dump(stdout, m, 128);
 
     eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
     rte_pktmbuf_adj(m, (uint16_t)sizeof(struct ether_hdr));
@@ -155,7 +159,7 @@ void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct 
         return;
     }
 
-    rte_pktmbuf_dump(stdout, m, 0);
+    rte_pktmbuf_dump(stdout, m, 128);
 
     n_mbufs = lp->mbuf_out[port].n_mbufs;
     lp->mbuf_out[port].array[n_mbufs] = m;

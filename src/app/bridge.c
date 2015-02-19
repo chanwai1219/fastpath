@@ -137,8 +137,10 @@ void bridge_receive(struct rte_mbuf *m,
     struct ether_hdr *eth_hdr;
     struct bridge_fdb_entry *entry;
     struct bridge_private *private = (struct bridge_private *)br->private;
+    struct fastpath_pkt_metadata *c =
+        (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
 
-    eth_hdr = (struct ether_hdr *)(rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr));
+    eth_hdr = (struct ether_hdr *)c->mac_header;
 
     port = bridge_get_port(br, peer);
     if (port == BRIDGE_INVALID_PORT) {
@@ -185,8 +187,14 @@ void bridge_xmit(struct rte_mbuf *m,
     __rte_unused struct module *peer, struct module *br)
 {
     struct bridge_fdb_entry *entry;
-    struct ether_hdr *eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
+    struct ether_hdr *eth_hdr;
     struct bridge_private *private = (struct bridge_private *)br->private;
+    struct fastpath_pkt_metadata *c =
+        (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
+
+    eth_hdr = (struct ether_hdr *)c->mac_header;
+
+    fastpath_log_debug("bridge %s forward "MAC_FMT"\n", br->name, MAC_ARG(&eth_hdr->d_addr));
 
     if (is_multicast_ether_addr(&eth_hdr->d_addr)) {
         bridge_flood(m, br, BRIDGE_MAX_PORTS);
@@ -197,6 +205,7 @@ void bridge_xmit(struct rte_mbuf *m,
             return;
         }
 
+        rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct ether_hdr));
         SEND_PKT(m, br, private->port[entry->port], PKT_DIR_RECV);
     }
 }

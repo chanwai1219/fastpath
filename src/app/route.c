@@ -59,8 +59,8 @@ struct module *route_module;
 
 static void neigh_init(struct module *route);
 static void lpm_init(struct module *route);
-static int neigh_add(struct module *route, struct arp_entry * neigh);
-static int neigh_del(struct module *route, struct arp_entry * neigh);
+static int neigh_add(struct module *route, struct nh_entry *nh, struct arp_entry *neigh);
+static int neigh_del(struct module *route, struct nh_entry *nh);
 static int nh_add(struct module *route, struct lpm_key *key, struct nh_entry *nh);
 static int nh_del(struct module *route, struct lpm_key *key);
 static int nh6_add(struct module *route, struct lpm6_key *key, struct nh6_entry *nh);
@@ -128,16 +128,16 @@ nht6_find_free(struct nh6_table *tbl, uint32_t *pos)
     return 0;
 }
 
-int neigh_add(struct module *route, struct arp_entry *neigh)
+int neigh_add(struct module *route, struct nh_entry *nh, struct arp_entry *neigh)
 {
     int ret;
     
     struct route_private *private = (struct route_private *)route->private;
 
-    ret = rte_hash_add_key(private->neigh_hash_tbl, (void *)neigh);
+    ret = rte_hash_add_key(private->neigh_hash_tbl, (void *)nh);
     if (ret < 0) {
-        fastpath_log_error("neigh_add: add "MAC_FMT" type %d faild\n",
-            MAC_ARG(&neigh->nh_arp), neigh->type);
+        fastpath_log_error("neigh_add: add "NIPQUAD_FMT" iface %d faild\n",
+            HIPQUAD(nh->nh_ip), nh->nh_iface);
         return ret;
     }
 
@@ -146,16 +146,16 @@ int neigh_add(struct module *route, struct arp_entry *neigh)
     return 0;
 }
 
-int neigh_del(struct module *route, struct arp_entry *neigh)
+int neigh_del(struct module *route, struct nh_entry *nh)
 {
     int ret;
     
     struct route_private *private = (struct route_private *)route->private;
 
-    ret = rte_hash_del_key(private->neigh_hash_tbl, (void *)neigh);
+    ret = rte_hash_del_key(private->neigh_hash_tbl, (void *)nh);
     if (ret < 0) {
-        fastpath_log_error("neigh_del: addr "MAC_FMT" type %d not exist\n",
-            MAC_ARG(&neigh->nh_arp), neigh->type);
+        fastpath_log_error("neigh_del: ip "NIPQUAD_FMT" iface %d not exist\n",
+            HIPQUAD(nh->nh_ip), nh->nh_iface);
         return ret;
     }
 
@@ -318,6 +318,7 @@ void route_receive(struct rte_mbuf *m,
 {
     uint8_t next_hop;
     int neigh_idx;
+    struct ether_hdr *eth_hdr;
     struct ipv4_hdr *ipv4_hdr;
     struct ipv6_hdr *ipv6_hdr;
     struct nh_entry *nh;
@@ -329,6 +330,9 @@ void route_receive(struct rte_mbuf *m,
     
     if (c->protocol == ETHER_TYPE_IPv4) {
         ipv4_hdr = rte_pktmbuf_mtod(m, struct ipv4_hdr *);
+
+        fastpath_log_debug("route receive pkt "NIPQUAD_FMT" ==> "NIPQUAD_FMT"\n",
+            NIPQUAD(ipv4_hdr->src_addr), NIPQUAD(ipv4_hdr->dst_addr));
         
         /* Find destination port */
         if (rte_lpm_lookup(private->lpm_tbl, 
@@ -346,13 +350,17 @@ void route_receive(struct rte_mbuf *m,
 
         neigh_idx = rte_hash_lookup(private->neigh_hash_tbl, (void *)nh);
         if (neigh_idx < 0) {
-            fastpath_log_debug("neigh entry for "NIPQUAD_FMT" not found, drop packet\n",
-                HIPQUAD(nh->nh_ip));
+            fastpath_log_debug("neigh entry for "NIPQUAD_FMT"@%d not found, drop packet\n",
+                HIPQUAD(nh->nh_ip), nh->nh_iface);
             rte_pktmbuf_free(m);
             return;
         }
-
+        
         neigh = &private->neigh_tbl[neigh_idx];
+
+        fastpath_log_debug("route found "NIPQUAD_FMT" next hop "MAC_FMT" type %d\n",
+            NIPQUAD(ipv4_hdr->dst_addr), MAC_ARG(&neigh->nh_arp), neigh->type);
+        
         switch (neigh->type) {
         case NEIGH_TYPE_LOCAL:
             fastpath_log_debug("route receive proto %d packet, will be supported later\n",
@@ -361,8 +369,10 @@ void route_receive(struct rte_mbuf *m,
             break;
 
         case NEIGH_TYPE_REACHABLE:
-            rte_memcpy(rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr), 
-                &neigh->nh_arp, sizeof(struct ether_hdr));
+            c->mac_header = rte_pktmbuf_mtod(m, uint8_t *) - sizeof(struct ether_hdr);
+            eth_hdr = (struct ether_hdr *)c->mac_header;
+            rte_memcpy(&eth_hdr->d_addr, &neigh->nh_arp, sizeof(struct ether_hdr));
+            eth_hdr->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
             SEND_PKT(m, route, private->ipv4[nh->nh_iface], PKT_DIR_XMIT);
             break;
 
@@ -404,8 +414,8 @@ void route_receive(struct rte_mbuf *m,
             break;
 
         case NEIGH_TYPE_REACHABLE:
-            rte_memcpy(rte_pktmbuf_mtod(m, char *) - sizeof(struct ether_hdr), 
-                &neigh->nh_arp, sizeof(struct ether_hdr));
+            c->mac_header = rte_pktmbuf_mtod(m, uint8_t *) - sizeof(struct ether_hdr);
+            rte_memcpy(c->mac_header, &neigh->nh_arp, sizeof(struct ether_hdr));
             SEND_PKT(m, route, private->ipv6[nh6->nh_iface], PKT_DIR_XMIT);
             break;
 
@@ -437,8 +447,21 @@ int route_handle_msg(struct module *route,
     switch (req->cmd) {
     case ROUTE_MSG_ADD_NEIGH:
         {
-            struct arp_entry *neigh = (struct arp_entry *)req->data;
-            ret = neigh_add(route, neigh);
+            struct arp_add *add = (struct arp_add *)req->data;
+            struct nh_entry nh = {
+                .nh_ip = rte_be_to_cpu_32(add->nh_ip),
+                .nh_iface = rte_be_to_cpu_32(add->nh_iface),
+            };
+            struct arp_entry neigh = {
+                .type = rte_be_to_cpu_16(add->type),
+            };
+
+            memcpy(&neigh.nh_arp, &add->nh_arp, sizeof(struct ether_addr));
+
+            fastpath_log_debug("add nh "NIPQUAD_FMT" iface %d arp "MAC_FMT" type %d\n",
+                HIPQUAD(nh.nh_ip), nh.nh_iface, MAC_ARG(&neigh.nh_arp), neigh.type);
+            
+            ret = neigh_add(route, &nh, &neigh);
             if (ret != 0) {
                 fastpath_log_error("neigh_add failed\n");
                 resp->flag = FASTPATH_MSG_FAILED;
@@ -447,8 +470,12 @@ int route_handle_msg(struct module *route,
         break;
     case ROUTE_MSG_DEL_NEIGH:
         {
-            struct arp_entry *neigh = (struct arp_entry *)req->data;
-            ret = neigh_del(route, neigh);
+            struct arp_del *del = (struct arp_del *)req->data;
+            struct nh_entry nh = {
+                .nh_ip = rte_be_to_cpu_32(del->nh_ip),
+                .nh_iface = rte_be_to_cpu_32(del->nh_iface),
+            };
+            ret = neigh_del(route, &nh);
             if (ret != 0) {
                 fastpath_log_error("neigh_del failed\n");
                 resp->flag = FASTPATH_MSG_FAILED;
@@ -467,7 +494,7 @@ int route_handle_msg(struct module *route,
                 .nh_iface = rte_be_to_cpu_32(rt->nh_iface),
             };
 
-            fastpath_log_debug("ip "NIPQUAD_FMT" depth %d next hop "NIPQUAD_FMT" interface %d\n",
+            fastpath_log_debug("add ip "NIPQUAD_FMT" depth %d next hop "NIPQUAD_FMT" interface %d\n",
                 NIPQUAD(rt->ip), rt->depth, NIPQUAD(rt->nh_ip), rte_be_to_cpu_32(rt->nh_iface));
             
             ret = nh_add(route, &key, &entry);

@@ -35,11 +35,6 @@ enum {
     ROUTE_MSG_DEL_NH6,
 };
 
-struct arp_entry {
-    uint16_t type;
-    uint8_t nh_arp[6];
-};
-
 struct route_add {
     uint32_t ip;
     uint8_t depth;
@@ -62,6 +57,18 @@ struct route6_add {
 struct route6_del {
     uint8_t ip[16];
     uint8_t depth;
+};
+
+struct arp_add {
+    uint32_t nh_ip;
+    uint32_t nh_iface;
+    uint16_t type;
+    uint8_t nh_arp[6];
+};
+
+struct arp_del {
+    uint32_t nh_ip;
+    uint32_t nh_iface;
 };
 
 void print_route_cmd()
@@ -93,18 +100,21 @@ int assemble_data(char *data)
         switch (req->cmd) {
         case ROUTE_MSG_ADD_NEIGH:
             {
-                struct arp_entry *neigh = (struct arp_entry *)req->data;
+                struct arp_add *add = (struct arp_add *)req->data;
                 
-                req->len = sizeof(struct arp_entry);
-                length += sizeof(struct arp_entry);
+                req->len = sizeof(struct arp_add);
+                length += sizeof(struct arp_add);
 
-                neigh->type = NEIGH_TYPE_REACHABLE;
-                neigh->nh_arp[0] = 0x00;
-                neigh->nh_arp[1] = 0x01;
-                neigh->nh_arp[2] = 0x02;
-                neigh->nh_arp[3] = 0x03;
-                neigh->nh_arp[4] = 0x04;
-                neigh->nh_arp[5] = 0x05;
+                add->nh_ip = htonl(IPv4(192,168,101,100));
+                add->nh_iface = htonl(1);
+
+                add->type = htons(NEIGH_TYPE_REACHABLE);
+                add->nh_arp[0] = 0x00;
+                add->nh_arp[1] = 0x01;
+                add->nh_arp[2] = 0x02;
+                add->nh_arp[3] = 0x03;
+                add->nh_arp[4] = 0x04;
+                add->nh_arp[5] = 0x05;
             }
             break;
             
@@ -118,7 +128,7 @@ int assemble_data(char *data)
                 rt_add->ip = htonl(IPv4(0,0,0,0));
                 rt_add->depth = 0;
                 rt_add->nh_ip = htonl(IPv4(192,168,101,100));
-                rt_add->nh_iface = htonl(0);
+                rt_add->nh_iface = htonl(1);
             }
             break;
 
