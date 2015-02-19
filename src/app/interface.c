@@ -64,12 +64,14 @@ void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *i
     struct interface_private *private;
     struct rte_ip_frag_tbl *tbl;
     struct rte_ip_frag_death_row *dr;
+    struct fastpath_pkt_metadata *c =
+        (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
 
     RTE_SET_USED(peer);
 
     private = (struct interface_private *)iface->private;
 
-    if (m->ol_flags & (PKT_RX_IPV4_HDR)) {
+    if (c->protocol == ETHER_TYPE_IPv4) {
         ipv4_hdr = rte_pktmbuf_mtod(m, struct ipv4_hdr *);
 
         fastpath_log_debug("interface %s receive pkt "NIPQUAD_FMT" ==> "NIPQUAD_FMT"\n",
@@ -105,7 +107,7 @@ void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *i
         }
 
         SEND_PKT(m, iface, private->ipv4, PKT_DIR_RECV);
-    } else if (m->ol_flags & (PKT_RX_IPV6_HDR | PKT_RX_IPV6_HDR_EXT)) {
+    } else if (c->protocol == ETHER_TYPE_IPv6) {
         struct ipv6_extension_fragment *frag_hdr;
 
         ipv6_hdr = rte_pktmbuf_mtod(m, struct ipv6_hdr *);

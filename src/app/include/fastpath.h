@@ -113,9 +113,13 @@ enum {
     MODULE_TYPE_ROUTE,
 };
 
+#define FASTPATH_MSG_FAILED     0xFF
+
 struct msg_hdr {
+    char path[32];
+    uint8_t flag;
+    uint8_t cmd;
     uint16_t len;
-    uint16_t cmd;
     uint8_t data[0];
 };
 
@@ -124,6 +128,7 @@ struct module {
     char name[NAME_SIZE];
     uint16_t type;
     int (*connect)(struct module *local, struct module *peer, void *param);
+    int (*message)(struct module *local, struct msg_hdr *req, struct msg_hdr *resp);
     void (*receive)(struct rte_mbuf *m, struct module *peer, struct module *local);
     void (*transmit)(struct rte_mbuf *m, struct module *peer, struct module *local);
     void *private;

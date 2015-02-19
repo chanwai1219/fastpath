@@ -69,289 +69,293 @@
 #define FASTPATH_WORKER_PREFETCH1(p)
 #endif
 
-#define PREFETCH_OFFSET		3
+#ifndef FASTPATH_MSG_LENGTH
+#define FASTPATH_MSG_LENGTH 1472
+#endif
+
+#define PREFETCH_OFFSET        3
 
 static __inline__ void
 fastpath_process_packet_bulk(struct rte_mbuf ** pkts, int nb_rx)
 {
-	int j;
+    int j;
 
-	/* Prefetch first packets */
-	for (j = 0; j < PREFETCH_OFFSET && j < nb_rx; j++)
-		rte_prefetch0(rte_pktmbuf_mtod(pkts[j], void *));
+    /* Prefetch first packets */
+    for (j = 0; j < PREFETCH_OFFSET && j < nb_rx; j++)
+        rte_prefetch0(rte_pktmbuf_mtod(pkts[j], void *));
 
-	/* Prefetch and handle already prefetched packets */
-	for (j = 0; j < (nb_rx - PREFETCH_OFFSET); j++) {
-		rte_prefetch0(rte_pktmbuf_mtod(pkts[j + PREFETCH_OFFSET], void *));
-		ethernet_input(pkts[j]);
-	}
+    /* Prefetch and handle already prefetched packets */
+    for (j = 0; j < (nb_rx - PREFETCH_OFFSET); j++) {
+        rte_prefetch0(rte_pktmbuf_mtod(pkts[j + PREFETCH_OFFSET], void *));
+        ethernet_input(pkts[j]);
+    }
 
-	/* Handle remaining prefetched packets */
-	for (; j < nb_rx; j++)
-		ethernet_input(pkts[j]);
+    /* Handle remaining prefetched packets */
+    for (; j < nb_rx; j++)
+        ethernet_input(pkts[j]);
 }
 
 static inline void
 fastpath_rx_buffer_to_send (
-	struct fastpath_params_rx *lp,
-	uint32_t worker,
-	struct rte_mbuf *mbuf,
-	uint32_t bsz)
+    struct fastpath_params_rx *lp,
+    uint32_t worker,
+    struct rte_mbuf *mbuf,
+    uint32_t bsz)
 {
-	uint32_t pos;
-	int ret;
+    uint32_t pos;
+    int ret;
 
-	pos = lp->mbuf_out[worker].n_mbufs;
-	lp->mbuf_out[worker].array[pos ++] = mbuf;
-	if (likely(pos < bsz)) {
-		lp->mbuf_out[worker].n_mbufs = pos;
-		return;
-	}
+    pos = lp->mbuf_out[worker].n_mbufs;
+    lp->mbuf_out[worker].array[pos ++] = mbuf;
+    if (likely(pos < bsz)) {
+        lp->mbuf_out[worker].n_mbufs = pos;
+        return;
+    }
 
-	ret = rte_ring_sp_enqueue_bulk(
-		lp->rings[worker],
-		(void **) lp->mbuf_out[worker].array,
-		bsz);
+    ret = rte_ring_sp_enqueue_bulk(
+        lp->rings[worker],
+        (void **) lp->mbuf_out[worker].array,
+        bsz);
 
-	if (unlikely(ret == -ENOBUFS)) {
-		uint32_t k;
-		for (k = 0; k < bsz; k ++) {
-			struct rte_mbuf *m = lp->mbuf_out[worker].array[k];
-			rte_pktmbuf_free(m);
-		}
-	}
+    if (unlikely(ret == -ENOBUFS)) {
+        uint32_t k;
+        for (k = 0; k < bsz; k ++) {
+            struct rte_mbuf *m = lp->mbuf_out[worker].array[k];
+            rte_pktmbuf_free(m);
+        }
+    }
 
-	lp->mbuf_out[worker].n_mbufs = 0;
-	lp->mbuf_out_flush[worker] = 0;
+    lp->mbuf_out[worker].n_mbufs = 0;
+    lp->mbuf_out_flush[worker] = 0;
 
 #if FASTPATH_STATS
-	lp->rings_iters[worker] ++;
-	if (likely(ret == 0)) {
-		lp->rings_count[worker] ++;
-	}
-	if (unlikely(lp->rings_iters[worker] == FASTPATH_STATS)) {
-		unsigned lcore = rte_lcore_id();
+    lp->rings_iters[worker] ++;
+    if (likely(ret == 0)) {
+        lp->rings_count[worker] ++;
+    }
+    if (unlikely(lp->rings_iters[worker] == FASTPATH_STATS)) {
+        unsigned lcore = rte_lcore_id();
 
-		printf("\tI/O RX %u out (worker %u): enq success rate = %.2f\n",
-			lcore,
-			(unsigned)worker,
-			((double) lp->rings_count[worker]) / ((double) lp->rings_iters[worker]));
-		lp->rings_iters[worker] = 0;
-		lp->rings_count[worker] = 0;
-	}
+        printf("\tI/O RX %u out (worker %u): enq success rate = %.2f\n",
+            lcore,
+            (unsigned)worker,
+            ((double) lp->rings_count[worker]) / ((double) lp->rings_iters[worker]));
+        lp->rings_iters[worker] = 0;
+        lp->rings_count[worker] = 0;
+    }
 #endif
 }
 
 static inline void
 fastpath_rx(
-	struct fastpath_params_rx *lp,
-	uint32_t n_workers,
-	uint32_t bsz_rd,
-	uint32_t bsz_wr,
-	uint8_t pos_lb)
+    struct fastpath_params_rx *lp,
+    uint32_t n_workers,
+    uint32_t bsz_rd,
+    uint32_t bsz_wr,
+    uint8_t pos_lb)
 {
-	struct rte_mbuf *mbuf_1_0, *mbuf_1_1, *mbuf_2_0, *mbuf_2_1;
-	uint8_t *data_1_0, *data_1_1 = NULL;
-	uint32_t i;
+    struct rte_mbuf *mbuf_1_0, *mbuf_1_1, *mbuf_2_0, *mbuf_2_1;
+    uint8_t *data_1_0, *data_1_1 = NULL;
+    uint32_t i;
 
-	for (i = 0; i < lp->n_nic_queues; i ++) {
-		uint8_t port = lp->nic_queues[i].port;
-		uint8_t queue = lp->nic_queues[i].queue;
-		uint32_t n_mbufs, j;
+    for (i = 0; i < lp->n_nic_queues; i ++) {
+        uint8_t port = lp->nic_queues[i].port;
+        uint8_t queue = lp->nic_queues[i].queue;
+        uint32_t n_mbufs, j;
 
-		n_mbufs = rte_eth_rx_burst(
-			port,
-			queue,
-			lp->mbuf_in.array,
-			(uint16_t) bsz_rd);
+        n_mbufs = rte_eth_rx_burst(
+            port,
+            queue,
+            lp->mbuf_in.array,
+            (uint16_t) bsz_rd);
 
-		if (unlikely(n_mbufs == 0)) {
-			continue;
-		}
+        if (unlikely(n_mbufs == 0)) {
+            continue;
+        }
 
 #if FASTPATH_STATS
-		lp->nic_queues_iters[i] ++;
-		lp->nic_queues_count[i] += n_mbufs;
-		if (unlikely(lp->nic_queues_iters[i] == FASTPATH_STATS)) {
-			struct rte_eth_stats stats;
-			unsigned lcore = rte_lcore_id();
+        lp->nic_queues_iters[i] ++;
+        lp->nic_queues_count[i] += n_mbufs;
+        if (unlikely(lp->nic_queues_iters[i] == FASTPATH_STATS)) {
+            struct rte_eth_stats stats;
+            unsigned lcore = rte_lcore_id();
 
-			rte_eth_stats_get(port, &stats);
+            rte_eth_stats_get(port, &stats);
 
-			printf("I/O RX %u in (NIC port %u): NIC drop ratio = %.2f avg burst size = %.2f\n",
-				lcore,
-				(unsigned) port,
-				(double) stats.imissed / (double) (stats.imissed + stats.ipackets),
-				((double) lp->nic_queues_count[i]) / ((double) lp->nic_queues_iters[i]));
-			lp->nic_queues_iters[i] = 0;
-			lp->nic_queues_count[i] = 0;
-		}
+            printf("I/O RX %u in (NIC port %u): NIC drop ratio = %.2f avg burst size = %.2f\n",
+                lcore,
+                (unsigned) port,
+                (double) stats.imissed / (double) (stats.imissed + stats.ipackets),
+                ((double) lp->nic_queues_count[i]) / ((double) lp->nic_queues_iters[i]));
+            lp->nic_queues_iters[i] = 0;
+            lp->nic_queues_count[i] = 0;
+        }
 #endif
 
-		mbuf_1_0 = lp->mbuf_in.array[0];
-		mbuf_1_1 = lp->mbuf_in.array[1];
-		data_1_0 = rte_pktmbuf_mtod(mbuf_1_0, uint8_t *);
-		if (likely(n_mbufs > 1)) {
-			data_1_1 = rte_pktmbuf_mtod(mbuf_1_1, uint8_t *);
-		}
+        mbuf_1_0 = lp->mbuf_in.array[0];
+        mbuf_1_1 = lp->mbuf_in.array[1];
+        data_1_0 = rte_pktmbuf_mtod(mbuf_1_0, uint8_t *);
+        if (likely(n_mbufs > 1)) {
+            data_1_1 = rte_pktmbuf_mtod(mbuf_1_1, uint8_t *);
+        }
 
-		mbuf_2_0 = lp->mbuf_in.array[2];
-		mbuf_2_1 = lp->mbuf_in.array[3];
-		FASTPATH_RX_PREFETCH0(mbuf_2_0);
-		FASTPATH_RX_PREFETCH0(mbuf_2_1);
+        mbuf_2_0 = lp->mbuf_in.array[2];
+        mbuf_2_1 = lp->mbuf_in.array[3];
+        FASTPATH_RX_PREFETCH0(mbuf_2_0);
+        FASTPATH_RX_PREFETCH0(mbuf_2_1);
 
-		for (j = 0; j + 3 < n_mbufs; j += 2) {
-			struct rte_mbuf *mbuf_0_0, *mbuf_0_1;
-			uint8_t *data_0_0, *data_0_1;
-			uint32_t worker_0, worker_1;
+        for (j = 0; j + 3 < n_mbufs; j += 2) {
+            struct rte_mbuf *mbuf_0_0, *mbuf_0_1;
+            uint8_t *data_0_0, *data_0_1;
+            uint32_t worker_0, worker_1;
 
-			mbuf_0_0 = mbuf_1_0;
-			mbuf_0_1 = mbuf_1_1;
-			data_0_0 = data_1_0;
-			data_0_1 = data_1_1;
+            mbuf_0_0 = mbuf_1_0;
+            mbuf_0_1 = mbuf_1_1;
+            data_0_0 = data_1_0;
+            data_0_1 = data_1_1;
 
-			mbuf_1_0 = mbuf_2_0;
-			mbuf_1_1 = mbuf_2_1;
-			data_1_0 = rte_pktmbuf_mtod(mbuf_2_0, uint8_t *);
-			data_1_1 = rte_pktmbuf_mtod(mbuf_2_1, uint8_t *);
-			FASTPATH_RX_PREFETCH0(data_1_0);
-			FASTPATH_RX_PREFETCH0(data_1_1);
+            mbuf_1_0 = mbuf_2_0;
+            mbuf_1_1 = mbuf_2_1;
+            data_1_0 = rte_pktmbuf_mtod(mbuf_2_0, uint8_t *);
+            data_1_1 = rte_pktmbuf_mtod(mbuf_2_1, uint8_t *);
+            FASTPATH_RX_PREFETCH0(data_1_0);
+            FASTPATH_RX_PREFETCH0(data_1_1);
 
-			mbuf_2_0 = lp->mbuf_in.array[j+4];
-			mbuf_2_1 = lp->mbuf_in.array[j+5];
-			FASTPATH_RX_PREFETCH0(mbuf_2_0);
-			FASTPATH_RX_PREFETCH0(mbuf_2_1);
+            mbuf_2_0 = lp->mbuf_in.array[j+4];
+            mbuf_2_1 = lp->mbuf_in.array[j+5];
+            FASTPATH_RX_PREFETCH0(mbuf_2_0);
+            FASTPATH_RX_PREFETCH0(mbuf_2_1);
 
-			worker_0 = data_0_0[pos_lb] & (n_workers - 1);
-			worker_1 = data_0_1[pos_lb] & (n_workers - 1);
+            worker_0 = data_0_0[pos_lb] & (n_workers - 1);
+            worker_1 = data_0_1[pos_lb] & (n_workers - 1);
 
-			fastpath_rx_buffer_to_send(lp, worker_0, mbuf_0_0, bsz_wr);
-			fastpath_rx_buffer_to_send(lp, worker_1, mbuf_0_1, bsz_wr);
-		}
+            fastpath_rx_buffer_to_send(lp, worker_0, mbuf_0_0, bsz_wr);
+            fastpath_rx_buffer_to_send(lp, worker_1, mbuf_0_1, bsz_wr);
+        }
 
-		/* Handle the last 1, 2 (when n_mbufs is even) or 3 (when n_mbufs is odd) packets  */
-		for ( ; j < n_mbufs; j += 1) {
-			struct rte_mbuf *mbuf;
-			uint8_t *data;
-			uint32_t worker;
+        /* Handle the last 1, 2 (when n_mbufs is even) or 3 (when n_mbufs is odd) packets  */
+        for ( ; j < n_mbufs; j += 1) {
+            struct rte_mbuf *mbuf;
+            uint8_t *data;
+            uint32_t worker;
 
-			mbuf = mbuf_1_0;
-			mbuf_1_0 = mbuf_1_1;
-			mbuf_1_1 = mbuf_2_0;
-			mbuf_2_0 = mbuf_2_1;
+            mbuf = mbuf_1_0;
+            mbuf_1_0 = mbuf_1_1;
+            mbuf_1_1 = mbuf_2_0;
+            mbuf_2_0 = mbuf_2_1;
 
-			data = rte_pktmbuf_mtod(mbuf, uint8_t *);
+            data = rte_pktmbuf_mtod(mbuf, uint8_t *);
 
-			FASTPATH_RX_PREFETCH0(mbuf_1_0);
+            FASTPATH_RX_PREFETCH0(mbuf_1_0);
 
-			worker = data[pos_lb] & (n_workers - 1);
+            worker = data[pos_lb] & (n_workers - 1);
 
-			fastpath_rx_buffer_to_send(lp, worker, mbuf, bsz_wr);
-		}
-	}
+            fastpath_rx_buffer_to_send(lp, worker, mbuf, bsz_wr);
+        }
+    }
 }
 
 static inline void
 fastpath_rx_flush(struct fastpath_params_rx *lp, uint32_t n_workers)
 {
-	uint32_t worker;
+    uint32_t worker;
 
-	for (worker = 0; worker < n_workers; worker ++) {
-		int ret;
+    for (worker = 0; worker < n_workers; worker ++) {
+        int ret;
 
-		if (likely((lp->mbuf_out_flush[worker] == 0) ||
-		           (lp->mbuf_out[worker].n_mbufs == 0))) {
-			lp->mbuf_out_flush[worker] = 1;
-			continue;
-		}
+        if (likely((lp->mbuf_out_flush[worker] == 0) ||
+                   (lp->mbuf_out[worker].n_mbufs == 0))) {
+            lp->mbuf_out_flush[worker] = 1;
+            continue;
+        }
 
-		ret = rte_ring_sp_enqueue_bulk(
-			lp->rings[worker],
-			(void **) lp->mbuf_out[worker].array,
-			lp->mbuf_out[worker].n_mbufs);
+        ret = rte_ring_sp_enqueue_bulk(
+            lp->rings[worker],
+            (void **) lp->mbuf_out[worker].array,
+            lp->mbuf_out[worker].n_mbufs);
 
-		if (unlikely(ret < 0)) {
-			uint32_t k;
-			for (k = 0; k < lp->mbuf_out[worker].n_mbufs; k ++) {
-				struct rte_mbuf *pkt_to_free = lp->mbuf_out[worker].array[k];
-				rte_pktmbuf_free(pkt_to_free);
-			}
-		}
+        if (unlikely(ret < 0)) {
+            uint32_t k;
+            for (k = 0; k < lp->mbuf_out[worker].n_mbufs; k ++) {
+                struct rte_mbuf *pkt_to_free = lp->mbuf_out[worker].array[k];
+                rte_pktmbuf_free(pkt_to_free);
+            }
+        }
 
-		lp->mbuf_out[worker].n_mbufs = 0;
-		lp->mbuf_out_flush[worker] = 1;
-	}
+        lp->mbuf_out[worker].n_mbufs = 0;
+        lp->mbuf_out_flush[worker] = 1;
+    }
 }
 
 static void
 fastpath_main_loop_rx(void)
 {
-	uint32_t lcore = rte_lcore_id();
-	struct fastpath_params_rx *lp = &fastpath.lcore_params[lcore].rx;
-	uint32_t n_workers = fastpath_get_lcores_worker();
-	uint64_t i = 0;
+    uint32_t lcore = rte_lcore_id();
+    struct fastpath_params_rx *lp = &fastpath.lcore_params[lcore].rx;
+    uint32_t n_workers = fastpath_get_lcores_worker();
+    uint64_t i = 0;
 
-	uint32_t bsz_rx_rd = fastpath.burst_size_rx_read;
-	uint32_t bsz_rx_wr = fastpath.burst_size_rx_write;
+    uint32_t bsz_rx_rd = fastpath.burst_size_rx_read;
+    uint32_t bsz_rx_wr = fastpath.burst_size_rx_write;
 
-	uint8_t pos_lb = fastpath.pos_lb;
+    uint8_t pos_lb = fastpath.pos_lb;
 
-	for ( ; ; ) {
-		if (FASTPATH_RX_FLUSH && (unlikely(i == FASTPATH_RX_FLUSH))) {
-			if (likely(lp->n_nic_queues > 0)) {
-				fastpath_rx_flush(lp, n_workers);
-			}
+    for ( ; ; ) {
+        if (FASTPATH_RX_FLUSH && (unlikely(i == FASTPATH_RX_FLUSH))) {
+            if (likely(lp->n_nic_queues > 0)) {
+                fastpath_rx_flush(lp, n_workers);
+            }
 
-			i = 0;
-		}
+            i = 0;
+        }
 
-		if (likely(lp->n_nic_queues > 0)) {
-			fastpath_rx(lp, n_workers, bsz_rx_rd, bsz_rx_wr, pos_lb);
-		}
+        if (likely(lp->n_nic_queues > 0)) {
+            fastpath_rx(lp, n_workers, bsz_rx_rd, bsz_rx_wr, pos_lb);
+        }
 
-		i ++;
-	}
+        i ++;
+    }
 }
 
 static inline void
 fastpath_worker(
-	struct fastpath_params_worker *lp,
-	uint32_t bsz_rd)
+    struct fastpath_params_worker *lp,
+    uint32_t bsz_rd)
 {
-	uint32_t i;
+    uint32_t i;
 
-	for (i = 0; i < lp->n_rings; i ++) {
-		struct rte_ring *ring_in = lp->rings[i];
-		int ret;
+    for (i = 0; i < lp->n_rings; i ++) {
+        struct rte_ring *ring_in = lp->rings[i];
+        int ret;
 
-		ret = rte_ring_sc_dequeue_bulk(
-			ring_in,
-			(void **) lp->mbuf_in.array,
-			bsz_rd);
+        ret = rte_ring_sc_dequeue_bulk(
+            ring_in,
+            (void **) lp->mbuf_in.array,
+            bsz_rd);
 
-		if (unlikely(ret == -ENOENT)) {
-			continue;
-		}
+        if (unlikely(ret == -ENOENT)) {
+            continue;
+        }
 
         fastpath_process_packet_bulk(lp->mbuf_in.array, bsz_rd);
 
         rte_ip_frag_free_death_row(&fastpath.death_row, PREFETCH_OFFSET);
-	}
+    }
 }
 
 static inline void
 fastpath_worker_flush(struct fastpath_params_worker *lp)
 {
-	uint32_t port;
+    uint32_t port;
 
-	for (port = 0; port < FASTPATH_MAX_NIC_PORTS; port ++) {
-		uint32_t n_pkts;
+    for (port = 0; port < FASTPATH_MAX_NIC_PORTS; port ++) {
+        uint32_t n_pkts;
 
-		if (likely((lp->mbuf_out_flush[port] == 0) ||
-		           (lp->mbuf_out[port].n_mbufs == 0))) {
-			lp->mbuf_out_flush[port] = 1;
-			continue;
-		}
+        if (likely((lp->mbuf_out_flush[port] == 0) ||
+                   (lp->mbuf_out[port].n_mbufs == 0))) {
+            lp->mbuf_out_flush[port] = 1;
+            continue;
+        }
 
         n_pkts = rte_eth_tx_burst(
             port, 
@@ -359,138 +363,228 @@ fastpath_worker_flush(struct fastpath_params_worker *lp)
             lp->mbuf_out[port].array,
             lp->mbuf_out[port].n_mbufs);
         
-		if (unlikely(n_pkts < lp->mbuf_out[port].n_mbufs)) {
-			uint32_t k;
-			for (k = 0; k < lp->mbuf_out[port].n_mbufs; k ++) {
-				struct rte_mbuf *pkt_to_free = lp->mbuf_out[port].array[k];
-				rte_pktmbuf_free(pkt_to_free);
-			}
-		}
+        if (unlikely(n_pkts < lp->mbuf_out[port].n_mbufs)) {
+            uint32_t k;
+            for (k = 0; k < lp->mbuf_out[port].n_mbufs; k ++) {
+                struct rte_mbuf *pkt_to_free = lp->mbuf_out[port].array[k];
+                rte_pktmbuf_free(pkt_to_free);
+            }
+        }
 
-		lp->mbuf_out[port].n_mbufs = 0;
-		lp->mbuf_out_flush[port] = 1;
-	}
+        lp->mbuf_out[port].n_mbufs = 0;
+        lp->mbuf_out_flush[port] = 1;
+    }
 }
 
 static void
 fastpath_main_loop_worker(void) {
-	uint32_t lcore = rte_lcore_id();
-	struct fastpath_params_worker *lp = &fastpath.lcore_params[lcore].worker;
-	uint64_t i = 0;
+    uint32_t lcore = rte_lcore_id();
+    struct fastpath_params_worker *lp = &fastpath.lcore_params[lcore].worker;
+    uint64_t i = 0;
 
-	uint32_t bsz_rd = fastpath.burst_size_worker_read;
+    uint32_t bsz_rd = fastpath.burst_size_worker_read;
 
-	for ( ; ; ) {
-		if (FASTPATH_WORKER_FLUSH && (unlikely(i == FASTPATH_WORKER_FLUSH))) {
-			fastpath_worker_flush(lp);
-			i = 0;
-		}
+    for ( ; ; ) {
+        if (FASTPATH_WORKER_FLUSH && (unlikely(i == FASTPATH_WORKER_FLUSH))) {
+            fastpath_worker_flush(lp);
+            i = 0;
+        }
 
-		fastpath_worker(lp, bsz_rd);
+        fastpath_worker(lp, bsz_rd);
 
-		i ++;
-	}
+        i ++;
+    }
 }
 
 static inline void
 fastpath_rx_worker(
-	struct fastpath_params_rx *lp,
-	uint32_t bsz_rd)
+    struct fastpath_params_rx *lp,
+    uint32_t bsz_rd)
 {
-	uint32_t i;
+    uint32_t i;
 
-	for (i = 0; i < lp->n_nic_queues; i ++) {
-		uint8_t port = lp->nic_queues[i].port;
-		uint8_t queue = lp->nic_queues[i].queue;
-		uint32_t n_mbufs;
+    for (i = 0; i < lp->n_nic_queues; i ++) {
+        uint8_t port = lp->nic_queues[i].port;
+        uint8_t queue = lp->nic_queues[i].queue;
+        uint32_t n_mbufs;
 
-		n_mbufs = rte_eth_rx_burst(
-			port,
-			queue,
-			lp->mbuf_in.array,
-			(uint16_t) bsz_rd);
+        n_mbufs = rte_eth_rx_burst(
+            port,
+            queue,
+            lp->mbuf_in.array,
+            (uint16_t) bsz_rd);
 
-		if (unlikely(n_mbufs == 0)) {
-			continue;
-		}
+        if (unlikely(n_mbufs == 0)) {
+            continue;
+        }
 
 #if FASTPATH_STATS
-		lp->nic_queues_iters[i] ++;
-		lp->nic_queues_count[i] += n_mbufs;
-		if (unlikely(lp->nic_queues_iters[i] == FASTPATH_STATS)) {
-			struct rte_eth_stats stats;
-			unsigned lcore = rte_lcore_id();
+        lp->nic_queues_iters[i] ++;
+        lp->nic_queues_count[i] += n_mbufs;
+        if (unlikely(lp->nic_queues_iters[i] == FASTPATH_STATS)) {
+            struct rte_eth_stats stats;
+            unsigned lcore = rte_lcore_id();
 
-			rte_eth_stats_get(port, &stats);
+            rte_eth_stats_get(port, &stats);
 
-			printf("RX Worker %u in (NIC port %u): NIC drop ratio = %.2f avg burst size = %.2f\n",
-				lcore,
-				(unsigned) port,
-				(double) stats.imissed / (double) (stats.imissed + stats.ipackets),
-				((double) lp->nic_queues_count[i]) / ((double) lp->nic_queues_iters[i]));
-			lp->nic_queues_iters[i] = 0;
-			lp->nic_queues_count[i] = 0;
-		}
+            printf("RX Worker %u in (NIC port %u): NIC drop ratio = %.2f avg burst size = %.2f\n",
+                lcore,
+                (unsigned) port,
+                (double) stats.imissed / (double) (stats.imissed + stats.ipackets),
+                ((double) lp->nic_queues_count[i]) / ((double) lp->nic_queues_iters[i]));
+            lp->nic_queues_iters[i] = 0;
+            lp->nic_queues_count[i] = 0;
+        }
 #endif
 
-		fastpath_process_packet_bulk(lp->mbuf_in.array, n_mbufs);
+        fastpath_process_packet_bulk(lp->mbuf_in.array, n_mbufs);
 
         rte_ip_frag_free_death_row(&fastpath.death_row, PREFETCH_OFFSET);
-	}
+    }
 }
 
 static void
 fastpath_main_loop_rx_worker(void)
 {
-	uint32_t lcore = rte_lcore_id();
-	struct fastpath_params_rx *lp_rx = &fastpath.lcore_params[lcore].rx;
+    uint32_t lcore = rte_lcore_id();
+    struct fastpath_params_rx *lp_rx = &fastpath.lcore_params[lcore].rx;
     struct fastpath_params_worker *lp_worker = &fastpath.lcore_params[lcore].worker;
-	uint64_t i = 0;
+    uint64_t i = 0;
 
-	uint32_t bsz_rx_rd = fastpath.burst_size_rx_read;
+    uint32_t bsz_rx_rd = fastpath.burst_size_rx_read;
 
-	for ( ; ; ) {
-		if (FASTPATH_WORKER_FLUSH && (unlikely(i == FASTPATH_WORKER_FLUSH))) {
-			fastpath_worker_flush(lp_worker);
-			i = 0;
-		}
+    for ( ; ; ) {
+        if (FASTPATH_WORKER_FLUSH && (unlikely(i == FASTPATH_WORKER_FLUSH))) {
+            fastpath_worker_flush(lp_worker);
+            i = 0;
+        }
 
-		if (likely(lp_rx->n_nic_queues > 0)) {
-			fastpath_rx_worker(lp_rx, bsz_rx_rd);
-		}
+        if (likely(lp_rx->n_nic_queues > 0)) {
+            fastpath_rx_worker(lp_rx, bsz_rx_rd);
+        }
 
-		i ++;
-	}
+        i ++;
+    }
 }
 
+static void
+fastpath_main_loop_msg(void)
+{
+    int sd, flag, length, ret;
+    char req[FASTPATH_MSG_LENGTH] = {0};
+    char resp[FASTPATH_MSG_LENGTH];
+    fd_set rfds;
+    struct msghdr msgh;
+    struct iovec  iov;
+    struct sockaddr_in addr;
+    struct msg_hdr *msg;
+    struct module *module;
+
+    sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sd < 0) {
+        rte_exit(EXIT_FAILURE, "create socket failed");
+    }
+
+    flag = fcntl(sd, F_GETFL, 0);
+    ret = fcntl(sd, F_SETFL, flag | O_NONBLOCK);
+    if (ret < 0) {
+        return;
+    }
+
+    bzero(&addr, sizeof(struct sockaddr_in));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(4567);
+    addr.sin_addr.s_addr = INADDR_ANY;
+    length = sizeof(struct sockaddr_in);
+    bind(sd, (struct sockaddr *)&addr, (socklen_t)length);
+
+    FD_ZERO(&rfds);
+    FD_SET(sd, &rfds);
+
+    while (1) {
+        ret = select(sd + 1, &rfds, NULL, NULL, NULL);
+        if (ret < 0) {
+            fastpath_log_error("[%s]: select error, %m\n", __func__);
+            continue;
+        }
+
+        if (FD_ISSET(sd, &rfds)) {
+            memset(req, 0, sizeof(req));
+            memset(resp, 0, sizeof(resp));
+
+            iov.iov_base = req;
+            iov.iov_len = FASTPATH_MSG_LENGTH;
+
+            msgh.msg_name = &addr;
+            msgh.msg_namelen = sizeof(struct sockaddr_in);
+            msgh.msg_iov = &iov;
+            msgh.msg_iovlen = 1;
+            
+            length = recvmsg(sd, &msgh, 0);
+            if ((length < 0) || (length > FASTPATH_MSG_LENGTH)) {
+                fastpath_log_error("[%s]: recv packet error, %m\n", __func__);
+                continue;
+            }
+
+            msg = (struct msg_hdr *)req;
+            module = module_get_by_name((const char *)msg->path);
+            if (module == NULL) {
+                fastpath_log_error("invalid message, path %s\n", msg->path);
+                continue;
+            }
+
+            strncpy(resp, msg->path, sizeof(msg->path));
+            ret = module->message(module, (struct msg_hdr *)req, (struct msg_hdr *)resp);
+            
+            iov.iov_base = resp;
+            iov.iov_len = length;
+
+            msgh.msg_name = &addr;
+            msgh.msg_namelen = sizeof(struct sockaddr_in);
+            msgh.msg_iov = &iov;
+            msgh.msg_iovlen = 1;
+            
+            length = sendmsg(sd, &msgh, 0);
+            if (length < 0) {
+                fastpath_log_error("[%s]: send to "NIPQUAD_FMT" failed\n", 
+                    __func__, NIPQUAD(addr.sin_addr.s_addr));
+            }
+        }
+    }
+}
 
 int
 fastpath_main_loop(__attribute__((unused)) void *arg)
 {
-	struct fastpath_lcore_params *lp;
-	unsigned lcore;
+    struct fastpath_lcore_params *lp;
+    unsigned lcore;
 
-	lcore = rte_lcore_id();
-	lp = &fastpath.lcore_params[lcore];
+    lcore = rte_lcore_id();
+    lp = &fastpath.lcore_params[lcore];
 
-	if (lp->type == e_FASTPATH_LCORE_RX) {
-		printf("Logical core %u (RX) main loop.\n", lcore);
-		fastpath_main_loop_rx();
-	}
+    if (lcore == rte_get_master_lcore()) {
+        printf("Master core %u msg loop.\n", lcore);
+        fastpath_main_loop_msg();
+    }
 
-	if (lp->type == e_FASTPATH_LCORE_WORKER) {
-		printf("Logical core %u (Worker %u) main loop.\n",
-			lcore,
-			(unsigned) lp->worker.worker_id);
-		fastpath_main_loop_worker();
-	}
+    if (lp->type == e_FASTPATH_LCORE_RX) {
+        printf("Logical core %u (RX) main loop.\n", lcore);
+        fastpath_main_loop_rx();
+    }
+
+    if (lp->type == e_FASTPATH_LCORE_WORKER) {
+        printf("Logical core %u (Worker %u) main loop.\n",
+            lcore,
+            (unsigned) lp->worker.worker_id);
+        fastpath_main_loop_worker();
+    }
 
     if (lp->type == e_FASTPATH_LCORE_RX_WORKER) {
-		printf("Logical core %u (RX Worker %u) main loop.\n",
-			lcore,
-			(unsigned) lp->worker.worker_id);
-		fastpath_main_loop_rx_worker();
-	}
+        printf("Logical core %u (RX Worker %u) main loop.\n",
+            lcore,
+            (unsigned) lp->worker.worker_id);
+        fastpath_main_loop_rx_worker();
+    }
 
-	return 0;
+    return 0;
 }

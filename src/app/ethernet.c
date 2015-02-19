@@ -155,7 +155,7 @@ void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct 
         return;
     }
 
-    rte_pktmbuf_dump(stdout, m, 128);
+    rte_pktmbuf_dump(stdout, m, 0);
 
     n_mbufs = lp->mbuf_out[port].n_mbufs;
     lp->mbuf_out[port].array[n_mbufs] = m;

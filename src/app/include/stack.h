@@ -7,6 +7,8 @@ const char * xml_get_param(xmlNodePtr node, const char *name, const char* def_va
 xmlXPathObjectPtr xml_get_nodeset(xmlXPathContextPtr context, const char *path);
 xmlNodePtr xml_get_node(xmlXPathContextPtr context, const char *path, int *dup);
 
+struct module *module_get_by_name(const char *name);
+
 void stack_setup(void);
 
 #endif

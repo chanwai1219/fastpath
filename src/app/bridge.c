@@ -120,7 +120,7 @@ static void bridge_flood(struct rte_mbuf *m, struct module *br, uint8_t input)
         }
     }
 
-    if (pkt_num == 1 && input == BRIDGE_MAX_PORTS) {
+    if (pkt_num == 1 && input != BRIDGE_MAX_PORTS) {
         SEND_PKT(m, br, private->interface, PKT_DIR_RECV);
     } else {
         fastpath_log_error("bridge_flood: error occured pkt num %d input %d", pkt_num, input);
@@ -170,6 +170,11 @@ void bridge_receive(struct rte_mbuf *m,
         if (entry->flag & BRIDGE_FDB_FLAG_LOCAL) {
             SEND_PKT(m, br, private->interface, PKT_DIR_RECV);
         } else {
+            if (entry->port == port) {
+                fastpath_log_debug("source destination port are same, drop packet\n", br->name);
+                rte_pktmbuf_free(m);
+                return;
+            }
             rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct ether_hdr));
             SEND_PKT(m, br, private->port[entry->port], PKT_DIR_XMIT);
         }

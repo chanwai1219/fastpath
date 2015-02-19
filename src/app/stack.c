@@ -127,6 +127,19 @@ void print_modules(void)
     }
 }
 
+struct module *module_get_by_name(const char *name)
+{
+    struct module_entry *entry;
+    
+    LIST_FOREACH(entry, &module_list, entry) {
+        if (strcmp(entry->module->name, name) == 0) {
+            return entry->module;
+        }
+    }
+
+    return NULL;
+}
+
 struct module_entry *module_find(const char *name)
 {
     struct module_entry *entry;
