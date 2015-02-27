@@ -358,6 +358,7 @@ struct fastpath_params {
 
     /* kni params */
     struct rte_kni *kni[FASTPATH_MAX_NIC_PORTS];
+    struct mbuf_array kni_mbuf_out[FASTPATH_MAX_NIC_PORTS];
 } __rte_cache_aligned;
 
 extern struct fastpath_params fastpath;
@@ -377,5 +378,8 @@ uint32_t fastpath_get_lcores_rx(void);
 uint32_t fastpath_get_lcores_worker(void);
 uint32_t fastpath_get_lcores_rx_worker(void);
 void fastpath_print_params(void);
+void kni_ingress(struct rte_mbuf *m, uint32_t port_id);
+void kni_egress(uint32_t port_id);
+
 
 #endif /* _MAIN_H_ */

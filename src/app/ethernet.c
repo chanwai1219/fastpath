@@ -85,7 +85,7 @@ void ethernet_input(struct rte_mbuf *m)
 
     eth = find_ethernet(m->port);
     if (eth == NULL) {
-        fastpath_log_error("ethernet_receive: port %d not initialized\n", m->port);
+        fastpath_log_error("ethernet_input: port %d not initialized\n", m->port);
 
         rte_pktmbuf_free(m);
         return;
@@ -114,9 +114,10 @@ void ethernet_receive(struct rte_mbuf *m, struct module *peer, struct module *et
 
     eth_hdr = rte_pktmbuf_mtod(m, struct ether_hdr *);
     rte_pktmbuf_adj(m, (uint16_t)sizeof(struct ether_hdr));
-    vlan_hdr = rte_pktmbuf_mtod(m, struct vlan_hdr *);
 
     if (ntohs(eth_hdr->ether_type) == ETHER_TYPE_VLAN) {
+        vlan_hdr = rte_pktmbuf_mtod(m, struct vlan_hdr *);
+        
         vid = ntohs(vlan_hdr->vlan_tci);
         
         if (private->mode == VLAN_MODE_ACCESS) {
@@ -193,19 +194,20 @@ void ethernet_xmit(struct rte_mbuf *m, __rte_unused struct module *peer, struct 
     return;
 }
 
-int ethernet_rcvmsg(struct module *local, struct msg_hdr *msg, struct msg_hdr *resp)
+int ethernet_handle_msg(struct module *eth, 
+    struct msg_hdr *req, struct msg_hdr *resp)
 {
     int ret = 0;
     struct ethernet_private *private;
 
-    if (local == NULL) {
-        fastpath_log_error("ethernet_rcvmsg: invalid local ptr\n");
+    if (eth == NULL) {
+        fastpath_log_error("ethernet_handle_msg: invalid local ptr\n");
         return -EINVAL;
     }
 
-    private = (struct ethernet_private *)local->private;
+    private = (struct ethernet_private *)eth->private;
 
-    switch (msg->cmd) {
+    switch (req->cmd) {
     case ETHERNET_GET_ADDRESS:
         rte_eth_macaddr_get(private->port, (struct ether_addr *)resp->data);
         break;
@@ -282,6 +284,7 @@ struct module * ethernet_init(uint32_t port, uint16_t mode, uint16_t native)
     eth->receive = ethernet_receive;
     eth->transmit = ethernet_xmit;
     eth->connect = ethernet_connect;
+    eth->message = ethernet_handle_msg;
     eth->type = MODULE_TYPE_ETHERNET;
     snprintf(eth->name, sizeof(eth->name), "vEth%d", port);
 

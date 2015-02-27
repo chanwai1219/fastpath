@@ -135,6 +135,11 @@ void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *i
         }
 
         SEND_PKT(m, iface, private->ipv6, PKT_DIR_RECV);
+    } else {
+        /* TODO: send to kernel */
+        fastpath_log_debug("interface receive protocol %02x packet, not supported for now\n",
+            c->protocol);
+        rte_pktmbuf_free(m);
     }
 }
 

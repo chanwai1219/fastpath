@@ -75,6 +75,115 @@
 
 #define PREFETCH_OFFSET        3
 
+/* Structure type for recording kni interface specific stats */
+struct kni_interface_stats {
+	/* number of pkts received from NIC, and sent to KNI */
+	uint64_t rx_packets;
+
+	/* number of pkts received from NIC, but failed to send to KNI */
+	uint64_t rx_dropped;
+
+	/* number of pkts received from KNI, and sent to NIC */
+	uint64_t tx_packets;
+
+	/* number of pkts received from KNI, but failed to send to NIC */
+	uint64_t tx_dropped;
+};
+
+/* kni device statistics array */
+static struct kni_interface_stats kni_stats[FASTPATH_MAX_NIC_PORTS];
+
+#define PKT_BURST_SZ    32
+
+/**
+ * Interface to burst rx and enqueue mbufs into rx_q
+ */
+void kni_ingress(struct rte_mbuf *m, uint32_t port_id)
+{
+    uint32_t n_mbufs, n_pkts;
+    struct rte_kni *kni;
+    struct mbuf_array *pkts_burst;
+
+    if (port_id >= FASTPATH_MAX_NIC_PORTS) {
+        fastpath_log_error("kni_egress: invalid port %d\n", port_id);
+        return;
+    }
+
+    kni = fastpath.kni[port_id];
+    pkts_burst = &fastpath.kni_mbuf_out[port_id];
+
+    /* Burst tx to kni */
+    n_mbufs = pkts_burst->n_mbufs;
+    pkts_burst->array[n_mbufs] = m;
+    n_mbufs += 1;
+    kni_stats[port_id].rx_packets += 1;
+
+    if (n_mbufs < PKT_BURST_SZ) {
+        pkts_burst->n_mbufs = n_mbufs;
+    } else {
+        n_pkts = rte_eth_tx_burst(
+                port_id,
+                0,
+                pkts_burst->array,
+                (uint16_t) n_mbufs);
+
+        if (unlikely(n_pkts < n_mbufs)) {
+            uint32_t k;
+            fastpath_log_error("kni_ingress: send pkt failed, success %d expected %d",
+                n_pkts, n_mbufs);
+            for (k = n_pkts; k < n_mbufs; k ++) {
+                struct rte_mbuf *pkt_to_free = pkts_burst->array[k];
+                rte_pktmbuf_free(pkt_to_free);
+            }
+
+            kni_stats[port_id].rx_dropped += n_mbufs - n_pkts;
+        }
+        
+        pkts_burst->n_mbufs = 0;
+    }
+
+    rte_kni_handle_request(kni);
+
+    return;
+}
+
+/**
+ * Interface to dequeue mbufs from tx_q and burst tx
+ */
+void kni_egress(uint32_t port_id)
+{
+    uint8_t i;
+    unsigned nb_tx, num;
+    struct rte_kni *kni;
+    struct rte_mbuf *pkts_burst[PKT_BURST_SZ];
+
+    if (port_id >= FASTPATH_MAX_NIC_PORTS) {
+        fastpath_log_error("kni_egress: invalid port %d\n", port_id);
+        return;
+    }
+
+    kni = fastpath.kni[port_id];
+
+    /* Burst rx from kni */
+    num = rte_kni_rx_burst(kni, pkts_burst, PKT_BURST_SZ);
+    if (unlikely(num > PKT_BURST_SZ)) {
+        fastpath_log_error("Error receiving from KNI\n");
+        return;
+    }
+    
+    /* Burst tx to eth */
+    nb_tx = rte_eth_tx_burst(port_id, 0, pkts_burst, (uint16_t)num);
+    kni_stats[port_id].tx_packets += nb_tx;
+    if (unlikely(nb_tx < num)) {
+        /* Free mbufs not tx to NIC */
+        for (i = nb_tx; i < num; i++) {
+            rte_pktmbuf_free(pkts_burst[i]);
+        }
+
+        kni_stats[port_id].tx_dropped += num - nb_tx;
+    }
+}
+
 static __inline__ void
 fastpath_process_packet_bulk(struct rte_mbuf ** pkts, int nb_rx)
 {
@@ -251,6 +360,10 @@ fastpath_rx(
             worker = data[pos_lb] & (n_workers - 1);
 
             fastpath_rx_buffer_to_send(lp, worker, mbuf, bsz_wr);
+        }
+
+        if (queue == 0) {
+            kni_egress(port);
         }
     }
 }
@@ -438,6 +551,10 @@ fastpath_rx_worker(
 #endif
 
         fastpath_process_packet_bulk(lp->mbuf_in.array, n_mbufs);
+
+        if (queue == 0) {
+            kni_egress(port);
+        }
 
         rte_ip_frag_free_death_row(&fastpath.death_row, PREFETCH_OFFSET);
     }
