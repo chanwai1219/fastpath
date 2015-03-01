@@ -13,6 +13,10 @@ enum {
     ROUTE_MSG_DEL_NH6,
 };
 
+#define NEIGH_TYPE_LOCAL        1
+#define NEIGH_TYPE_REACHABLE    2
+#define NEIGH_TYPE_UNRESOLVED   3
+
 struct arp_add {
     uint32_t nh_ip;
     uint32_t nh_iface;

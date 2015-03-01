@@ -59,6 +59,7 @@ is_valid_ipv4_pkt(struct ipv4_hdr *pkt, uint32_t link_len)
 void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *iface)
 {
     uint64_t cur_tsc = rte_rdtsc();
+    unsigned lcore = rte_lcore_id();
     struct ipv4_hdr *ipv4_hdr;
     struct ipv6_hdr *ipv6_hdr;
     struct interface_private *private;
@@ -88,7 +89,7 @@ void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *i
             struct rte_mbuf *mo;
 
             tbl = fastpath.frag_tbl;
-            dr = &fastpath.death_row;
+            dr = &fastpath.death_row[lcore];
 
             /* prepare mbuf: setup l2_len/l3_len. */
             m->l2_len = 0;
@@ -118,7 +119,7 @@ void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *i
             struct rte_mbuf *mo;
 
             tbl = fastpath.frag_tbl;
-            dr  = &fastpath.death_row;
+            dr  = &fastpath.death_row[lcore];
 
             /* prepare mbuf: setup l2_len/l3_len. */
             m->l2_len = 0;

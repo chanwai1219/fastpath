@@ -1,10 +1,6 @@
 
 #include "fastpath.h"
 
-#define NEIGH_TYPE_LOCAL        1
-#define NEIGH_TYPE_REACHABLE    2
-#define NEIGH_TYPE_UNRESOLVED   3
-
 struct arp_entry {
     uint16_t type;
     struct ether_addr nh_arp;

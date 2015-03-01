@@ -42,6 +42,8 @@
 /* Total octets in the FCS */
 #define KNI_ENET_FCS_SIZE       4
 
+extern struct thread_master *mgr_master;
+
 static struct rte_eth_conf port_conf = {
     .rxmode = {
         .mq_mode    = ETH_MQ_RX_RSS,
@@ -563,9 +565,26 @@ fastpath_init_knis(void)
     }
 }
 
+static void fastpath_init_threads(void)
+{
+    mgr_master = thread_master_create();
+    if (mgr_master == NULL) {
+        rte_exit(EXIT_FAILURE, "Can not create thread master\n");
+    }
+
+    if (manager_thread_add() < 0) {
+        fastpath_log_error("fastpath_init_threads: Can not create message thread\n");
+    }
+
+    if (neigh_thread_add() < 0) {
+        fastpath_log_error("fastpath_init_threads: Can not create neigh thread\n");
+    }
+}
+
 void fastpath_init(void)
 {
     fastpath_assign_worker_ids();
+    fastpath_init_threads();
     fastpath_init_frag_tables();
     fastpath_init_mbuf_pools();
     fastpath_init_indirect_mbuf_pools();

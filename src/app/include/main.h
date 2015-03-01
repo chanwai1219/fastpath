@@ -334,7 +334,7 @@ struct fastpath_params {
     struct rte_mempool *pktbuf_pools[FASTPATH_MAX_SOCKETS];
     struct rte_mempool *indirect_pools[FASTPATH_MAX_SOCKETS];
     struct rte_ip_frag_tbl *frag_tbl;
-    struct rte_ip_frag_death_row death_row;
+    struct rte_ip_frag_death_row death_row[FASTPATH_MAX_LCORES];
 
     /* LPM tables */
     struct rte_lpm *lpm_tables[FASTPATH_MAX_SOCKETS];

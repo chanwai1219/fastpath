@@ -69,10 +69,6 @@
 #define FASTPATH_WORKER_PREFETCH1(p)
 #endif
 
-#ifndef FASTPATH_MSG_LENGTH
-#define FASTPATH_MSG_LENGTH 1472
-#endif
-
 #define PREFETCH_OFFSET        3
 
 /* Structure type for recording kni interface specific stats */
@@ -94,6 +90,8 @@ struct kni_interface_stats {
 static struct kni_interface_stats kni_stats[FASTPATH_MAX_NIC_PORTS];
 
 #define PKT_BURST_SZ    32
+
+extern struct thread_master *mgr_master;
 
 /**
  * Interface to burst rx and enqueue mbufs into rx_q
@@ -142,8 +140,6 @@ void kni_ingress(struct rte_mbuf *m, uint32_t port_id)
         pkts_burst->n_mbufs = 0;
     }
 
-    rte_kni_handle_request(kni);
-
     return;
 }
 
@@ -182,6 +178,8 @@ void kni_egress(uint32_t port_id)
 
         kni_stats[port_id].tx_dropped += num - nb_tx;
     }
+
+    rte_kni_handle_request(kni);
 }
 
 static __inline__ void
@@ -271,6 +269,10 @@ fastpath_rx(
         uint8_t port = lp->nic_queues[i].port;
         uint8_t queue = lp->nic_queues[i].queue;
         uint32_t n_mbufs, j;
+
+        if (queue == 0) {
+            kni_egress(port);
+        }
 
         n_mbufs = rte_eth_rx_burst(
             port,
@@ -362,9 +364,7 @@ fastpath_rx(
             fastpath_rx_buffer_to_send(lp, worker, mbuf, bsz_wr);
         }
 
-        if (queue == 0) {
-            kni_egress(port);
-        }
+        
     }
 }
 
@@ -436,6 +436,7 @@ fastpath_worker(
     uint32_t bsz_rd)
 {
     uint32_t i;
+    unsigned lcore = rte_lcore_id();
 
     for (i = 0; i < lp->n_rings; i ++) {
         struct rte_ring *ring_in = lp->rings[i];
@@ -452,7 +453,7 @@ fastpath_worker(
 
         fastpath_process_packet_bulk(lp->mbuf_in.array, bsz_rd);
 
-        rte_ip_frag_free_death_row(&fastpath.death_row, PREFETCH_OFFSET);
+        rte_ip_frag_free_death_row(&fastpath.death_row[lcore], PREFETCH_OFFSET);
     }
 }
 
@@ -515,11 +516,16 @@ fastpath_rx_worker(
     uint32_t bsz_rd)
 {
     uint32_t i;
+    unsigned lcore = rte_lcore_id();
 
     for (i = 0; i < lp->n_nic_queues; i ++) {
         uint8_t port = lp->nic_queues[i].port;
         uint8_t queue = lp->nic_queues[i].queue;
         uint32_t n_mbufs;
+
+        if (queue == 0) {
+            kni_egress(port);
+        }
 
         n_mbufs = rte_eth_rx_burst(
             port,
@@ -536,7 +542,6 @@ fastpath_rx_worker(
         lp->nic_queues_count[i] += n_mbufs;
         if (unlikely(lp->nic_queues_iters[i] == FASTPATH_STATS)) {
             struct rte_eth_stats stats;
-            unsigned lcore = rte_lcore_id();
 
             rte_eth_stats_get(port, &stats);
 
@@ -552,11 +557,7 @@ fastpath_rx_worker(
 
         fastpath_process_packet_bulk(lp->mbuf_in.array, n_mbufs);
 
-        if (queue == 0) {
-            kni_egress(port);
-        }
-
-        rte_ip_frag_free_death_row(&fastpath.death_row, PREFETCH_OFFSET);
+        rte_ip_frag_free_death_row(&fastpath.death_row[lcore], PREFETCH_OFFSET);
     }
 }
 
@@ -585,88 +586,12 @@ fastpath_main_loop_rx_worker(void)
 }
 
 static void
-fastpath_main_loop_msg(void)
+fastpath_main_loop_mgr(void)
 {
-    int sd, flag, length, ret;
-    char req[FASTPATH_MSG_LENGTH] = {0};
-    char resp[FASTPATH_MSG_LENGTH];
-    fd_set rfds;
-    struct msghdr msgh;
-    struct iovec  iov;
-    struct sockaddr_in addr;
-    struct msg_hdr *msg;
-    struct module *module;
-
-    sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sd < 0) {
-        rte_exit(EXIT_FAILURE, "create socket failed");
-    }
-
-    flag = fcntl(sd, F_GETFL, 0);
-    ret = fcntl(sd, F_SETFL, flag | O_NONBLOCK);
-    if (ret < 0) {
-        return;
-    }
-
-    bzero(&addr, sizeof(struct sockaddr_in));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(4567);
-    addr.sin_addr.s_addr = INADDR_ANY;
-    length = sizeof(struct sockaddr_in);
-    bind(sd, (struct sockaddr *)&addr, (socklen_t)length);
-
-    FD_ZERO(&rfds);
-    FD_SET(sd, &rfds);
-
-    while (1) {
-        ret = select(sd + 1, &rfds, NULL, NULL, NULL);
-        if (ret < 0) {
-            fastpath_log_error("[%s]: select error, %m\n", __func__);
-            continue;
-        }
-
-        if (FD_ISSET(sd, &rfds)) {
-            memset(req, 0, sizeof(req));
-            memset(resp, 0, sizeof(resp));
-
-            iov.iov_base = req;
-            iov.iov_len = FASTPATH_MSG_LENGTH;
-
-            msgh.msg_name = &addr;
-            msgh.msg_namelen = sizeof(struct sockaddr_in);
-            msgh.msg_iov = &iov;
-            msgh.msg_iovlen = 1;
-            
-            length = recvmsg(sd, &msgh, 0);
-            if ((length < 0) || (length > FASTPATH_MSG_LENGTH)) {
-                fastpath_log_error("[%s]: recv packet error, %m\n", __func__);
-                continue;
-            }
-
-            msg = (struct msg_hdr *)req;
-            module = module_get_by_name((const char *)msg->path);
-            if (module == NULL) {
-                fastpath_log_error("invalid message, path %s\n", msg->path);
-                continue;
-            }
-
-            strncpy(resp, msg->path, sizeof(msg->path));
-            ret = module->message(module, (struct msg_hdr *)req, (struct msg_hdr *)resp);
-            
-            iov.iov_base = resp;
-            iov.iov_len = length;
-
-            msgh.msg_name = &addr;
-            msgh.msg_namelen = sizeof(struct sockaddr_in);
-            msgh.msg_iov = &iov;
-            msgh.msg_iovlen = 1;
-            
-            length = sendmsg(sd, &msgh, 0);
-            if (length < 0) {
-                fastpath_log_error("[%s]: send to "NIPQUAD_FMT" failed\n", 
-                    __func__, NIPQUAD(addr.sin_addr.s_addr));
-            }
-        }
+    struct thread thread;
+    
+    while (thread_fetch(mgr_master, &thread)) {
+        thread_call(&thread);
     }
 }
 
@@ -680,8 +605,8 @@ fastpath_main_loop(__attribute__((unused)) void *arg)
     lp = &fastpath.lcore_params[lcore];
 
     if (lcore == rte_get_master_lcore()) {
-        printf("Master core %u msg loop.\n", lcore);
-        fastpath_main_loop_msg();
+        printf("Master core %u mgr loop.\n", lcore);
+        fastpath_main_loop_mgr();
     }
 
     if (lp->type == e_FASTPATH_LCORE_RX) {

@@ -13,7 +13,7 @@ SRCDIR    = .
 OBJDIR    = obj
 LIBS      = 
 
-INCLUDES  = 
+INCLUDES  = -I../app/include
 
 SRCS    := $(shell find $(SRCDIR) -name '*.c')
 SRCDIRS := $(shell find . -name '*.c' -exec dirname {} \; | uniq)

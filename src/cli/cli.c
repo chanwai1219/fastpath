@@ -8,7 +8,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-
 #define IPv4(a,b,c,d) ((uint32_t)(((a) & 0xff) << 24) | \
 					   (((b) & 0xff) << 16) | \
 					   (((c) & 0xff) << 8)  | \
@@ -22,10 +21,6 @@ struct msg_hdr {
     uint8_t data[0];
 };
 
-#define NEIGH_TYPE_LOCAL        1
-#define NEIGH_TYPE_REACHABLE    2
-#define NEIGH_TYPE_UNRESOLVED   3
-
 enum {
     ROUTE_MSG_ADD_NEIGH,
     ROUTE_MSG_DEL_NEIGH,
@@ -34,6 +29,10 @@ enum {
     ROUTE_MSG_ADD_NH6,
     ROUTE_MSG_DEL_NH6,
 };
+
+#define NEIGH_TYPE_LOCAL        1
+#define NEIGH_TYPE_REACHABLE    2
+#define NEIGH_TYPE_UNRESOLVED   3
 
 struct route_add {
     uint32_t ip;

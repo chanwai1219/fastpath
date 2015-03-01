@@ -6,11 +6,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <inttypes.h>
-#include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
-#include <sys/queue.h>
-#include <net/if.h>
 #include <fcntl.h>
 #include <setjmp.h>
 #include <stdarg.h>
@@ -18,11 +15,18 @@
 #include <errno.h>
 #include <getopt.h>
 #include <termios.h>
-#include <sys/ioctl.h>
 #include <libgen.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/ioctl.h>
+#include <sys/queue.h>
+#include <net/if.h>
 #include <linux/if_tun.h>
 #include <poll.h>
 #include <assert.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 
 #include <rte_common.h>
 #include <rte_byteorder.h>
@@ -66,6 +70,9 @@
 #include "libxml/tree.h"
 #include "libxml/xpath.h"
 
+#include "thread.h"
+
+#include "manager.h"
 #include "main.h"
 #include "log.h"
 #include "utils.h"
