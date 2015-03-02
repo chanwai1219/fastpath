@@ -576,7 +576,7 @@ static void fastpath_init_threads(void)
         fastpath_log_error("fastpath_init_threads: Can not create message thread\n");
     }
 
-    if (neigh_thread_add() < 0) {
+    if (route_thread_add() < 0) {
         fastpath_log_error("fastpath_init_threads: Can not create neigh thread\n");
     }
 }

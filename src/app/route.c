@@ -354,8 +354,8 @@ void route_receive(struct rte_mbuf *m,
         
         neigh = &private->neigh_tbl[neigh_idx];
 
-        fastpath_log_debug("route found "NIPQUAD_FMT" next hop "MAC_FMT" type %d\n",
-            NIPQUAD(ipv4_hdr->dst_addr), MAC_ARG(&neigh->nh_arp), neigh->type);
+        fastpath_log_debug("route found "NIPQUAD_FMT" next hop "NIPQUAD_FMT"@%d type %d\n",
+            NIPQUAD(ipv4_hdr->dst_addr), NIPQUAD(nh->nh_ip), nh->nh_iface, neigh->type);
         
         switch (neigh->type) {
         case NEIGH_TYPE_LOCAL:
@@ -471,6 +471,9 @@ int route_handle_msg(struct module *route,
                 .nh_ip = rte_be_to_cpu_32(del->nh_ip),
                 .nh_iface = rte_be_to_cpu_32(del->nh_iface),
             };
+
+            fastpath_log_debug("del nh "NIPQUAD_FMT"\n", HIPQUAD(nh.nh_ip));
+            
             ret = neigh_del(route, &nh);
             if (ret != 0) {
                 fastpath_log_error("neigh_del failed\n");
@@ -490,7 +493,7 @@ int route_handle_msg(struct module *route,
                 .nh_iface = rte_be_to_cpu_32(rt->nh_iface),
             };
 
-            fastpath_log_debug("add ip "NIPQUAD_FMT" depth %d next hop "NIPQUAD_FMT" interface %d\n",
+            fastpath_log_debug("add nh ip "NIPQUAD_FMT" depth %d next hop "NIPQUAD_FMT" interface %d\n",
                 NIPQUAD(rt->ip), rt->depth, NIPQUAD(rt->nh_ip), rte_be_to_cpu_32(rt->nh_iface));
             
             ret = nh_add(route, &key, &entry);
@@ -504,9 +507,13 @@ int route_handle_msg(struct module *route,
         {
             struct route_del *rt = (struct route_del *)req->data;
             struct lpm_key key = {
-                .ip = rt->ip,
+                .ip = rte_be_to_cpu_32(rt->ip),
                 .depth = rt->depth,
             };
+
+            fastpath_log_debug("del nh ip "NIPQUAD_FMT" depth %d\n", 
+                NIPQUAD(rt->ip), rt->depth);
+            
             ret = nh_del(route, &key);
             if (ret != 0) {
                 fastpath_log_error("nh_del failed\n");
