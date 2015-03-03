@@ -454,7 +454,7 @@ int route_handle_msg(struct module *route,
 
             memcpy(&neigh.nh_arp, &add->nh_arp, sizeof(struct ether_addr));
 
-            fastpath_log_debug("add nh "NIPQUAD_FMT" iface %d arp "MAC_FMT" type %d\n",
+            fastpath_log_debug("add neigh "NIPQUAD_FMT" iface %d arp "MAC_FMT" type %d\n",
                 HIPQUAD(nh.nh_ip), nh.nh_iface, MAC_ARG(&neigh.nh_arp), neigh.type);
             
             ret = neigh_add(route, &nh, &neigh);
@@ -472,7 +472,7 @@ int route_handle_msg(struct module *route,
                 .nh_iface = rte_be_to_cpu_32(del->nh_iface),
             };
 
-            fastpath_log_debug("del nh "NIPQUAD_FMT"\n", HIPQUAD(nh.nh_ip));
+            fastpath_log_debug("del neigh "NIPQUAD_FMT"\n", HIPQUAD(nh.nh_ip));
             
             ret = neigh_del(route, &nh);
             if (ret != 0) {

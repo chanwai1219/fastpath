@@ -497,6 +497,8 @@ static int kni_alloc(uint8_t port_id)
 
     printf("Initialising kni port %u ...\n", (unsigned)port_id);
 
+    rte_spinlock_init(&fastpath.kni_lock[port_id]);
+
     /* Clear conf at first */
     memset(&conf, 0, sizeof(conf));
     snprintf(conf.name, RTE_KNI_NAMESIZE, "vEth%u", port_id);
@@ -520,7 +522,7 @@ static int kni_alloc(uint8_t port_id)
         rte_exit(EXIT_FAILURE, "Fail to create kni for port: %d\n", port_id);
     
     fastpath.kni[port_id] = kni;
-
+    
     return 0;
 }
 

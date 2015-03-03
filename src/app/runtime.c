@@ -98,9 +98,11 @@ extern struct thread_master *mgr_master;
  */
 void kni_ingress(struct rte_mbuf *m, uint32_t port_id)
 {
+    unsigned lcore = rte_lcore_id();
     uint32_t n_mbufs, n_pkts;
     struct rte_kni *kni;
     struct mbuf_array *pkts_burst;
+    rte_spinlock_t *kni_lock;
 
     if (port_id >= FASTPATH_MAX_NIC_PORTS) {
         fastpath_log_error("kni_egress: invalid port %d\n", port_id);
@@ -108,7 +110,8 @@ void kni_ingress(struct rte_mbuf *m, uint32_t port_id)
     }
 
     kni = fastpath.kni[port_id];
-    pkts_burst = &fastpath.kni_mbuf_out[port_id];
+    kni_lock = &fastpath.kni_lock[port_id];
+    pkts_burst = &fastpath.kni_mbuf_out[lcore][port_id];
 
     /* Burst tx to kni */
     n_mbufs = pkts_burst->n_mbufs;
@@ -119,12 +122,8 @@ void kni_ingress(struct rte_mbuf *m, uint32_t port_id)
     if (n_mbufs < PKT_BURST_SZ) {
         pkts_burst->n_mbufs = n_mbufs;
     } else {
-        n_pkts = rte_eth_tx_burst(
-                port_id,
-                0,
-                pkts_burst->array,
-                (uint16_t) n_mbufs);
-
+        rte_spinlock_lock(kni_lock);
+        n_pkts = rte_kni_tx_burst(kni, pkts_burst->array, (uint16_t) n_mbufs);
         if (unlikely(n_pkts < n_mbufs)) {
             uint32_t k;
             fastpath_log_error("kni_ingress: send pkt failed, success %d expected %d",
@@ -136,8 +135,10 @@ void kni_ingress(struct rte_mbuf *m, uint32_t port_id)
 
             kni_stats[port_id].rx_dropped += n_mbufs - n_pkts;
         }
+        rte_spinlock_unlock(kni_lock);
         
         pkts_burst->n_mbufs = 0;
+        fastpath.kni_mbuf_out_flush[lcore][port_id] = 0;
     }
 
     return;
@@ -461,6 +462,11 @@ static inline void
 fastpath_worker_flush(struct fastpath_params_worker *lp)
 {
     uint32_t port;
+    unsigned lcore = rte_lcore_id();
+    uint8_t *kni_mbuf_out_flush;
+    struct mbuf_array *pkts_burst;
+    struct rte_kni *kni;
+    rte_spinlock_t *kni_lock;
 
     for (port = 0; port < FASTPATH_MAX_NIC_PORTS; port ++) {
         uint32_t n_pkts;
@@ -487,6 +493,39 @@ fastpath_worker_flush(struct fastpath_params_worker *lp)
 
         lp->mbuf_out[port].n_mbufs = 0;
         lp->mbuf_out_flush[port] = 1;
+    }
+
+    for (port = 0; port < FASTPATH_MAX_NIC_PORTS; port ++) {
+        uint32_t n_pkts;
+
+        kni = fastpath.kni[port];
+        kni_lock = &fastpath.kni_lock[port];
+        pkts_burst = &fastpath.kni_mbuf_out[lcore][port];
+        kni_mbuf_out_flush = &fastpath.kni_mbuf_out_flush[lcore][port];
+
+        if (likely((*kni_mbuf_out_flush == 0) ||
+                   (pkts_burst->n_mbufs == 0))) {
+            *kni_mbuf_out_flush = 1;
+            continue;
+        }
+
+        rte_spinlock_lock(kni_lock);
+        n_pkts = rte_kni_tx_burst(kni, pkts_burst->array, (uint16_t) pkts_burst->n_mbufs);
+        if (unlikely(n_pkts < pkts_burst->n_mbufs)) {
+            uint32_t k;
+            fastpath_log_error("kni_ingress: send pkt failed, success %d expected %d",
+                n_pkts, pkts_burst->n_mbufs);
+            for (k = n_pkts; k < pkts_burst->n_mbufs; k ++) {
+                struct rte_mbuf *pkt_to_free = pkts_burst->array[k];
+                rte_pktmbuf_free(pkt_to_free);
+            }
+
+            kni_stats[port].rx_dropped += pkts_burst->n_mbufs - n_pkts;
+        }
+        rte_spinlock_unlock(kni_lock);
+        
+        pkts_burst->n_mbufs = 0;
+        *kni_mbuf_out_flush = 1;
     }
 }
 

@@ -227,15 +227,49 @@ static int ifa_update(struct nlmsghdr *nlh)
         return 0;
     }
 
-    if (RTM_DELADDR == n->nlmsg_type) {
+    if (RTM_DELADDR == nlh->nlmsg_type) {
+        hdr->cmd = ROUTE_MSG_DEL_NEIGH;
+        arp_del = (struct arp_del *)hdr->data;
+        arp_del->nh_iface = rte_cpu_to_be_32(ifm->ifa_index);
+        memcpy(&arp_del->nh_ip, RTA_DATA(tb[IFA_ADDRESS]), RTA_PAYLOAD(tb[IFA_ADDRESS]));
+        err = route_send(hdr);
+        if (err != 0) {
+            fastpath_log_error("ifa_update: send neigh failed\n");
+            return err;
+        }
+        
+        hdr->cmd = ROUTE_MSG_DEL_NH;
+        rt_del = (struct route_del *)hdr->data;
+        memcpy(&rt_del->ip, RTA_DATA(tb[IFA_ADDRESS]), RTA_PAYLOAD(tb[IFA_ADDRESS]));
+        rt_del->depth = 32;
+        err = route_send(hdr);
+        if (err != 0) {
+            fastpath_log_error("ifa_update: send nh failed\n");
+            return err;
+        }
+    } else {
         hdr->cmd = ROUTE_MSG_ADD_NEIGH;
         arp_add = (struct arp_add *)hdr->data;
         arp_add->nh_iface = rte_cpu_to_be_32(ifm->ifa_index);
         memcpy(&arp_add->nh_ip, RTA_DATA(tb[IFA_ADDRESS]), RTA_PAYLOAD(tb[IFA_ADDRESS]));
         arp_add->type = rte_cpu_to_be_16(NEIGH_TYPE_LOCAL);
-        memcpy(&arp_add->nh_arp, (char*)RTA_DATA(tb[NDA_LLADDR]), RTA_PAYLOAD(tb[NDA_LLADDR]));
-    } else {
+        err = route_send(hdr);
+        if (err != 0) {
+            fastpath_log_error("ifa_update: send neigh failed\n");
+            return err;
+        }
         
+        hdr->cmd = ROUTE_MSG_ADD_NH;
+        rt_add = (struct route_add *)hdr->data;
+        memcpy(&rt_add->ip, RTA_DATA(tb[IFA_ADDRESS]), RTA_PAYLOAD(tb[IFA_ADDRESS]));
+        rt_add->depth = 32;
+        memcpy(&rt_add->nh_ip, RTA_DATA(tb[IFA_ADDRESS]), RTA_PAYLOAD(tb[IFA_ADDRESS]));
+        rt_add->nh_iface = rte_cpu_to_be_32(ifm->ifa_index);
+        err = route_send(hdr);
+        if (err != 0) {
+            fastpath_log_error("ifa_update: send nh failed\n");
+            return err;
+        }
     }
 
     return err;
@@ -244,8 +278,6 @@ static int ifa_update(struct nlmsghdr *nlh)
 static int route_dispatch(struct nlmsghdr *hdr)
 {
     int ret = -1;
-
-    fastpath_log_debug("route_dispatch: msg type %d\n", hdr->nlmsg_type);
     
     switch (hdr->nlmsg_type) {
         case RTM_NEWADDR:

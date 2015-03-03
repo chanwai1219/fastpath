@@ -357,8 +357,10 @@ struct fastpath_params {
     uint8_t numa_on;
 
     /* kni params */
+    rte_spinlock_t kni_lock[FASTPATH_MAX_NIC_PORTS];
     struct rte_kni *kni[FASTPATH_MAX_NIC_PORTS];
-    struct mbuf_array kni_mbuf_out[FASTPATH_MAX_NIC_PORTS];
+    struct mbuf_array kni_mbuf_out[FASTPATH_MAX_LCORES][FASTPATH_MAX_NIC_PORTS];
+    uint8_t kni_mbuf_out_flush[FASTPATH_MAX_LCORES][FASTPATH_MAX_NIC_PORTS];
 } __rte_cache_aligned;
 
 extern struct fastpath_params fastpath;
