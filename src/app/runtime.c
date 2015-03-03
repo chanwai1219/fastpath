@@ -96,16 +96,19 @@ extern struct thread_master *mgr_master;
 /**
  * Interface to burst rx and enqueue mbufs into rx_q
  */
-void kni_ingress(struct rte_mbuf *m, uint32_t port_id)
+void kni_ingress(struct rte_mbuf *m)
 {
     unsigned lcore = rte_lcore_id();
-    uint32_t n_mbufs, n_pkts;
+    uint32_t n_mbufs, n_pkts, port_id;
     struct rte_kni *kni;
     struct mbuf_array *pkts_burst;
     rte_spinlock_t *kni_lock;
 
+    port_id = m->port;
+
     if (port_id >= FASTPATH_MAX_NIC_PORTS) {
         fastpath_log_error("kni_egress: invalid port %d\n", port_id);
+        rte_pktmbuf_free(m);
         return;
     }
 

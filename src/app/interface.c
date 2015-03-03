@@ -81,7 +81,15 @@ void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *i
 
         /* Check to make sure the packet is valid (RFC1812) */
         if (is_valid_ipv4_pkt(ipv4_hdr, m->pkt_len) < 0) {
+            fastpath_log_debug("invalid ipv4 pkt, drop\n");
             rte_pktmbuf_free(m);
+            return;
+        }
+
+        if (IS_IPV4_MCAST(rte_be_to_cpu_32(ipv4_hdr->dst_addr))) {
+            fastpath_log_debug("multicast pkt, send to kni\n");
+            rte_pktmbuf_prepend(m, c->network_header - c->mac_header);
+            kni_ingress(m);
             return;
         }
 

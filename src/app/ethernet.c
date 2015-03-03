@@ -82,6 +82,8 @@ fastpath_pkt_metadata_fill(struct rte_mbuf *m)
 void ethernet_input(struct rte_mbuf *m)
 {
     struct module *eth;
+    struct fastpath_pkt_metadata *c =
+        (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
 
     eth = find_ethernet(m->port);
     if (eth == NULL) {
@@ -92,6 +94,11 @@ void ethernet_input(struct rte_mbuf *m)
     }
 
     fastpath_pkt_metadata_fill(m);
+
+    if (c->protocol == ETHER_TYPE_ARP || c->protocol == ETHER_TYPE_RARP) {
+        kni_ingress(m);
+        return;
+    }
 
     ethernet_receive(m, NULL, eth);
 

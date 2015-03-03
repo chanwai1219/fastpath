@@ -380,7 +380,7 @@ uint32_t fastpath_get_lcores_rx(void);
 uint32_t fastpath_get_lcores_worker(void);
 uint32_t fastpath_get_lcores_rx_worker(void);
 void fastpath_print_params(void);
-void kni_ingress(struct rte_mbuf *m, uint32_t port_id);
+void kni_ingress(struct rte_mbuf *m);
 void kni_egress(uint32_t port_id);
 
 
