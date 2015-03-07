@@ -593,7 +593,6 @@ void fastpath_init(void)
     fastpath_init_rings();
     fastpath_init_nics();
     fastpath_init_knis();
-    fastpath_init_stack();
 
     check_all_ports_link_status(FASTPATH_MAX_NIC_PORTS, (~0x0));
 
@@ -605,6 +604,8 @@ void fastpath_init(void)
 void fastpath_cleanup(void)
 {
     uint32_t port;
+
+    fastpath_cleanup_stack();
     
     for (port = 0; port < FASTPATH_MAX_NIC_PORTS; port++) {
         kni_free_kni(port);

@@ -631,6 +631,8 @@ static void
 fastpath_main_loop_mgr(void)
 {
     struct thread thread;
+
+    fastpath_init_stack();
     
     while (thread_fetch(mgr_master, &thread)) {
         thread_call(&thread);

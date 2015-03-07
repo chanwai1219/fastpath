@@ -40,11 +40,12 @@ static int neigh_update(struct nlmsghdr *nlh)
 {
     int err;
     int len = nlh->nlmsg_len;
-    struct ndmsg *ndm;
-    struct rtattr *rta;
-     char *pifname;
+    uint32_t index;
+    char *pifname;
     char if_name[IF_NAMESIZE];
     char buf[512] = {0};
+    struct ndmsg *ndm;
+    struct rtattr *rta;
     struct rtattr *tb[NDA_MAX+1];
     struct msg_hdr *hdr;
     struct arp_add *arp_add;
@@ -65,14 +66,18 @@ static int neigh_update(struct nlmsghdr *nlh)
         return 0;
     }
 
+    index = get_port_map(ndm->ndm_ifindex);
+    if (index >= ROUTE_MAX_LINK) {
+        fastpath_log_debug("ifidx %d not concerned\n", ndm->ndm_ifindex);
+        return 0;
+    }
+
     pifname = if_indextoname(ndm->ndm_ifindex, if_name);
     if (pifname == NULL) {
         fastpath_log_error("%s:get if name by ifindex:%d err\n", 
                   __func__, ndm->ndm_ifindex);
         return -EIO;
     }
-
-    // TODO: map ifindex to eif idx
 
 #if 0
     if (!(ndm->ndm_state & (NUD_REACHABLE | NUD_PERMANENT))) {
@@ -90,20 +95,20 @@ static int neigh_update(struct nlmsghdr *nlh)
         return -EINVAL;
     }
 
-    fastpath_log_debug( "%s: neigh update, family %d, ifidx %d, state 0x%02x\n",
-        __func__, ndm->ndm_family, ndm->ndm_ifindex, ndm->ndm_state);
+    fastpath_log_debug( "%s: neigh update, family %d, ifidx %d, eif%d, state 0x%02x\n",
+        __func__, ndm->ndm_family, ndm->ndm_ifindex, index, ndm->ndm_state);
 
     if (ndm->ndm_state & NUD_FAILED) {
         hdr->cmd = ROUTE_MSG_DEL_NEIGH;
         arp_del = (struct arp_del *)hdr->data;
-        arp_del->nh_iface = rte_cpu_to_be_32(ndm->ndm_ifindex);
+        arp_del->nh_iface = rte_cpu_to_be_32(index);
         memcpy(&arp_del->nh_ip, RTA_DATA(tb[NDA_DST]), RTA_PAYLOAD(tb[NDA_DST]));
 
         fastpath_log_debug("del neigh, ip "NIPQUAD_FMT"\n", NIPQUAD(*(uint32_t *)RTA_DATA(tb[NDA_DST])));
     } else if (ndm->ndm_state & (NUD_REACHABLE | NUD_PERMANENT)) {
         hdr->cmd = ROUTE_MSG_ADD_NEIGH;
         arp_add = (struct arp_add *)hdr->data;
-        arp_add->nh_iface = rte_cpu_to_be_32(ndm->ndm_ifindex);
+        arp_add->nh_iface = rte_cpu_to_be_32(index);
         memcpy(&arp_add->nh_ip, RTA_DATA(tb[NDA_DST]), RTA_PAYLOAD(tb[NDA_DST]));
         arp_add->type = rte_cpu_to_be_16(NEIGH_TYPE_REACHABLE);
         if (NULL != tb[NDA_LLADDR]) {
@@ -128,11 +133,12 @@ static int neigh_update(struct nlmsghdr *nlh)
 static int nh_update(struct nlmsghdr *nlh)
 {
     int err = 0;
+    int len = nlh->nlmsg_len;
+    int index;
     char buf[512] = {0};
     struct msg_hdr *hdr;
     struct route_add *rt_add;
     struct route_del *rt_del;
-    int len = nlh->nlmsg_len;
     struct rtattr * tb[RTA_MAX+1];
     struct rtmsg *rtm;
     
@@ -163,6 +169,12 @@ static int nh_update(struct nlmsghdr *nlh)
         return 0;
     }
 
+    index = get_port_map(*(uint32_t *)RTA_DATA(tb[RTA_OIF]));
+    if (index >= ROUTE_MAX_LINK) {
+        fastpath_log_debug("ifidx %d not concerned\n", *(uint32_t *)RTA_DATA(tb[RTA_OIF]));
+        return 0;
+    }
+
     if (nlh->nlmsg_type == RTM_NEWROUTE) {
         hdr->cmd = ROUTE_MSG_ADD_NH;
         rt_add = (struct route_add *)hdr->data;
@@ -173,7 +185,7 @@ static int nh_update(struct nlmsghdr *nlh)
             memcpy(&rt_add->nh_ip, RTA_DATA(tb[RTA_GATEWAY]), RTA_PAYLOAD(tb[RTA_GATEWAY]));
         else
             memcpy(&rt_add->nh_ip, RTA_DATA(tb[RTA_DST]), RTA_PAYLOAD(tb[RTA_DST]));
-        rt_add->nh_iface= rte_cpu_to_be_32(*(uint32_t *)RTA_DATA(tb[RTA_OIF]));
+        rt_add->nh_iface= rte_cpu_to_be_32(index);
     } else {
         hdr->cmd = ROUTE_MSG_DEL_NH;
         rt_del = (struct route_del *)hdr->data;
@@ -194,6 +206,7 @@ static int ifa_update(struct nlmsghdr *nlh)
 {
     int err = 0;
     int len = nlh->nlmsg_len;
+    int index;
     char buf[512] = {0};
     struct msg_hdr *hdr;
     struct arp_add *arp_add;
@@ -220,6 +233,12 @@ static int ifa_update(struct nlmsghdr *nlh)
         return 0;
     }
 
+    index = get_port_map(ifm->ifa_index);
+    if (index >= ROUTE_MAX_LINK) {
+        fastpath_log_debug("ifidx %d not concerned\n", ifm->ifa_index);
+        return 0;
+    }
+
     rtattr_parse(tb, IFA_MAX, IFA_RTA(ifm), len);
 
     if (NULL == tb[IFA_ADDRESS]) {
@@ -230,7 +249,7 @@ static int ifa_update(struct nlmsghdr *nlh)
     if (RTM_DELADDR == nlh->nlmsg_type) {
         hdr->cmd = ROUTE_MSG_DEL_NEIGH;
         arp_del = (struct arp_del *)hdr->data;
-        arp_del->nh_iface = rte_cpu_to_be_32(ifm->ifa_index);
+        arp_del->nh_iface = rte_cpu_to_be_32(index);
         memcpy(&arp_del->nh_ip, RTA_DATA(tb[IFA_ADDRESS]), RTA_PAYLOAD(tb[IFA_ADDRESS]));
         err = route_send(hdr);
         if (err != 0) {
@@ -250,7 +269,7 @@ static int ifa_update(struct nlmsghdr *nlh)
     } else {
         hdr->cmd = ROUTE_MSG_ADD_NEIGH;
         arp_add = (struct arp_add *)hdr->data;
-        arp_add->nh_iface = rte_cpu_to_be_32(ifm->ifa_index);
+        arp_add->nh_iface = rte_cpu_to_be_32(index);
         memcpy(&arp_add->nh_ip, RTA_DATA(tb[IFA_ADDRESS]), RTA_PAYLOAD(tb[IFA_ADDRESS]));
         arp_add->type = rte_cpu_to_be_16(NEIGH_TYPE_LOCAL);
         err = route_send(hdr);
@@ -264,7 +283,7 @@ static int ifa_update(struct nlmsghdr *nlh)
         memcpy(&rt_add->ip, RTA_DATA(tb[IFA_ADDRESS]), RTA_PAYLOAD(tb[IFA_ADDRESS]));
         rt_add->depth = 32;
         memcpy(&rt_add->nh_ip, RTA_DATA(tb[IFA_ADDRESS]), RTA_PAYLOAD(tb[IFA_ADDRESS]));
-        rt_add->nh_iface = rte_cpu_to_be_32(ifm->ifa_index);
+        rt_add->nh_iface = rte_cpu_to_be_32(index);
         err = route_send(hdr);
         if (err != 0) {
             fastpath_log_error("ifa_update: send nh failed\n");

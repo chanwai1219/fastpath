@@ -12,9 +12,62 @@ struct module_entry {
 
 LIST_HEAD(, module_entry) module_list;
 
+uint32_t port_map[ROUTE_MAX_LINK] = {0};
+
 void module_add(struct module *module, uint32_t param1, uint32_t param2);
 void print_modules(void);
 struct module_entry *module_find(const char *name);
+
+static int execute_cmd(char *cmd)
+{
+    int retry = 0;
+    
+    while (retry < 3 && system(cmd) != 0) {
+        retry++;
+    }
+    if (retry == 3) {
+        fastpath_log_error("execute %s failed\n", cmd);
+        return -1;
+    }
+
+    return 0;
+}
+
+static void init_port_map(uint32_t ifidx, const char *name)
+{
+    int fd, err;
+    struct ifreq ifr;
+    
+    memset(&ifr, 0, sizeof(ifr));
+
+    strncpy(ifr.ifr_name, name, IFNAMSIZ);
+    
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    err = ioctl(fd, SIOCGIFINDEX, &ifr);
+    close(fd);
+    
+    if (err) {
+        fastpath_log_error("get %s ifidx failed\n", name);
+        return;
+    }
+    
+    port_map[ifidx] = ifr.ifr_ifindex;
+
+    fastpath_log_debug("interface %d ifidx %d\n", ifidx, port_map[ifidx]);
+}
+
+uint32_t get_port_map(uint32_t ifidx)
+{
+    uint32_t i;
+
+    for (i = 0; i < ROUTE_MAX_LINK; i++) {
+        if (port_map[i] == ifidx) {
+            break;
+        }
+    }
+
+    return i;
+}
 
 xmlNodePtr xml_get_child(xmlNodePtr node, const char *name)
 {
@@ -208,6 +261,11 @@ void fastpath_init_stack(void)
         
         module = ethernet_init(port, mode, native);
         module_add(module, port, 0);
+
+        snprintf(expr, sizeof(expr), "ifconfig %s up", module->name);
+        if (execute_cmd(expr) < 0) {
+            goto err_out;
+        }
     }
 
     /* bridge */
@@ -221,6 +279,17 @@ void fastpath_init_stack(void)
         xmlNodePtr member;
         
         node = nodeset->nodesetval->nodeTab[i];
+
+        str = xml_get_param(node, "name", NULL);
+        snprintf(expr, sizeof(expr), "brctl addbr %s", str);
+        if (execute_cmd(expr) < 0) {
+            goto err_out;
+        }
+
+        snprintf(expr, sizeof(expr), "ifconfig %s up", str);
+        if (execute_cmd(expr) < 0) {
+            goto err_out;
+        }
 
         str = xml_get_param(node, "vlan", NULL);
         vid = strtoul(str, NULL, 0);
@@ -240,6 +309,16 @@ void fastpath_init_stack(void)
                 if (module_find(expr) == NULL) {
                     module = vlan_init(pid, vid);
                     module_add(module, vid, 0);
+
+                    snprintf(expr, sizeof(expr), "vconfig add %s %d", member->children->content, vid);
+                    if (execute_cmd(expr) < 0) {
+                        goto err_out;
+                    }
+
+                    snprintf(expr, sizeof(expr), "ifconfig %s.%d up", member->children->content, vid);
+                    if (execute_cmd(expr) < 0) {
+                        goto err_out;
+                    }
                 }
             }
         }
@@ -264,9 +343,14 @@ void fastpath_init_stack(void)
 
         module = interface_init(ifidx);
         module_add(module, ifidx, 0);
+
+        snprintf(expr, sizeof(expr), "//bridge-list/bridge[interface='%s']", module->name);
+        node = xml_get_node(context, expr, NULL);
+        str = xml_get_param(node, "name", NULL);
+        init_port_map(ifidx, str);
     }
 
-    /* ip forward */
+    /* ip route */
     module = route_init();
     module_add(module, 0, 0);
 
@@ -301,11 +385,13 @@ void fastpath_init_stack(void)
     if (nodeset != NULL) {
         struct module *eif;
         struct module *br;
+        const char *addr_str;
 
         for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
             node = nodeset->nodesetval->nodeTab[i];
 
             str = xml_get_param(node, "name", NULL);
+            addr_str = xml_get_param(node, "address", NULL);
             entry = module_find(str);
             eif = entry->module;
 
@@ -316,6 +402,17 @@ void fastpath_init_stack(void)
             br = entry->module;
 
             eif->connect(eif, br, NULL);
+
+            if (addr_str) {
+                if (NULL == strchr(addr_str, ':')) {
+                    snprintf(expr, sizeof(expr), "ip addr add %s broadcast + dev %s", addr_str, br->name);
+                } else {
+                    snprintf(expr, sizeof(expr), "ip -6 addr add %s dev %s", addr_str, br->name);
+                }
+            }
+            if (execute_cmd(expr) < 0) {
+                goto err_out;
+            }
         }
     }
 
@@ -345,6 +442,11 @@ void fastpath_init_stack(void)
 
                     br->connect(br, eth, &pid);
                     pid++;
+
+                    snprintf(expr, sizeof(expr), "brctl addif %s %s", br->name, eth->name);
+                    if (execute_cmd(expr) < 0) {
+                        goto err_out;
+                    }
                 } else {
                     snprintf(expr, sizeof(expr), "%s.%d", member->children->content, vid);
                     entry = module_find(expr);
@@ -356,7 +458,107 @@ void fastpath_init_stack(void)
                     br->connect(br, vlan, &pid);
                     pid++;
 
+                    snprintf(expr, sizeof(expr), "brctl addif %s %s", br->name, vlan->name);
+                    if (execute_cmd(expr) < 0) {
+                        goto err_out;
+                    }
+
                     vlan->connect(vlan, eth, &vid);
+                }
+            }
+        }
+    }
+    
+err_out:      
+    if (context) {
+        xmlXPathFreeContext(context);
+    }
+
+    if (doc) {
+        xmlFreeDoc(doc);
+    }
+
+    return;
+}
+
+void fastpath_cleanup_stack(void)
+{
+    int i;
+    const char *str;
+    char expr[256];
+    xmlDocPtr   doc = NULL; 
+    xmlNodePtr  node;
+    xmlXPathObjectPtr nodeset;
+    xmlXPathContextPtr context = NULL;
+
+    fastpath_log_info("stack cleanup start\n");
+
+    doc = xmlReadFile(FASTPATH_STACK_CONFIG, NULL, XML_PARSE_NOBLANKS);
+    if (doc == NULL) {
+        fastpath_log_error("stack_cleanup: read config file failed\n");
+        goto err_out;
+    }
+    
+    if (xmlDocGetRootElement(doc) == NULL) {
+        fastpath_log_error("stack_cleanup: get root element\n");
+        goto err_out;
+    }
+    
+    context = xmlXPathNewContext(doc);
+    if (context == NULL) {
+        fastpath_log_error("stack_cleanup: get context failed\n");
+        goto err_out;
+    }
+
+    /* bridge */
+    nodeset = xml_get_nodeset(context, "//bridge-list/bridge");
+    if (nodeset == NULL) {
+        fastpath_log_error("get bridge failed\n");
+        goto err_out;
+    }
+    for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
+        uint16_t pid, vid;
+        xmlNodePtr member;
+        
+        node = nodeset->nodesetval->nodeTab[i];
+
+        snprintf(expr, sizeof(expr), "ifconfig %s down", str);
+        if (execute_cmd(expr) < 0) {
+            goto err_out;
+        }
+
+        str = xml_get_param(node, "name", NULL);
+        snprintf(expr, sizeof(expr), "brctl delbr %s", str);
+        if (execute_cmd(expr) < 0) {
+            goto err_out;
+        }
+
+
+        str = xml_get_param(node, "vlan", NULL);
+        vid = strtoul(str, NULL, 0);
+
+        for (member = node->children; member; member = member->next) {
+            if (!strcmp((const char *)member->name, "port")) {
+                pid = strtoul((const char *)&member->children->content[4], NULL, 0);
+
+                snprintf(expr, sizeof(expr), "//port-list/ethernet[name='%s']/native", 
+                    member->children->content);
+                node = xml_get_node(context, expr, NULL);
+                if (strtoul((const char *)node->children->content, NULL, 0) == vid) {
+                    continue;
+                }
+                
+                snprintf(expr, sizeof(expr), "%s.%d", member->children->content, vid);
+                if (module_find(expr) == NULL) {
+                    snprintf(expr, sizeof(expr), "ifconfig %s down", member->children->content);
+                    if (execute_cmd(expr) < 0) {
+                        goto err_out;
+                    }
+                    
+                    snprintf(expr, sizeof(expr), "vconfig rem %s.%d", member->children->content, vid);
+                    if (execute_cmd(expr) < 0) {
+                        goto err_out;
+                    }
                 }
             }
         }
