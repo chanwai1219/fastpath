@@ -27,6 +27,8 @@
 #include <assert.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
+#include <execinfo.h>
+#include <signal.h>
 
 #include <rte_common.h>
 #include <rte_byteorder.h>
@@ -64,6 +66,7 @@
 #include <rte_string_fns.h>
 #include <rte_spinlock.h>
 #include <rte_kni.h>
+#include <rte_acl.h>
 
 #include "libxml/list.h"
 #include "libxml/parser.h"
@@ -118,6 +121,7 @@ enum {
     MODULE_TYPE_VLAN,
     MODULE_TYPE_BRIDGE,
     MODULE_TYPE_INTERFACE,
+    MODULE_TYPE_ACL,
     MODULE_TYPE_ROUTE,
 };
 
@@ -216,6 +220,7 @@ struct fastpath_pkt_metadata {
 #include "vlan.h"
 #include "bridge.h"
 #include "interface.h"
+#include "acl.h"
 #include "route.h"
 
 #endif /* __FASTPATH_H__ */

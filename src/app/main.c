@@ -33,11 +33,55 @@
 
 #include "fastpath.h"
 
+static void
+signal_handler(int signum)
+{
+    int j, nptrs;
+    void *buffer[100];
+    char **strings;
+
+    RTE_SET_USED(signum);
+
+    fastpath_cleanup();
+
+    nptrs = backtrace(buffer, 100);
+    printf("backtrace() returned %d addresses\n", nptrs);
+
+    strings = backtrace_symbols(buffer, nptrs);
+    if (strings == NULL) {
+       perror("backtrace_symbols");
+       exit(EXIT_FAILURE);
+    }
+
+    for (j = 0; j < nptrs; j++) {
+       printf("%s\n", strings[j]);
+    }
+
+    free(strings);
+    exit(0);
+}
+
 int
 main(int argc, char **argv)
 {
     uint32_t lcore;
     int ret;
+
+    /* Associate signal_hanlder function with USR signals */
+    struct sigaction act;
+
+    act.sa_handler = signal_handler;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+
+    sigaction(SIGINT,  &act, 0);
+    sigaction(SIGQUIT, &act, 0);
+    sigaction(SIGTERM, &act, 0);
+    sigaction(SIGSTOP, &act, 0);
+    sigaction(SIGTSTP, &act, 0);
+    sigaction(SIGABRT, &act, 0);
+    sigaction(SIGFPE,  &act, 0);
+    sigaction(SIGSEGV, &act, 0);
 
     fastpath_init_log();
 
@@ -72,3 +116,4 @@ main(int argc, char **argv)
 
     return 0;
 }
+

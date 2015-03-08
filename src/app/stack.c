@@ -1,7 +1,7 @@
 
 #include "fastpath.h"
 
-#define FASTPATH_STACK_CONFIG   "./stack.cfg"
+#define FASTPATH_STACK_CONFIG   "./stack.xml"
 
 struct module_entry {
     uint32_t param1;

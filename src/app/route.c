@@ -309,8 +309,7 @@ int nh6_del(struct module *route, struct lpm6_key *key)
     return 0;
 }
 
-void route_receive(struct rte_mbuf *m, 
-    __rte_unused struct module *peer, struct module *route)
+void route_receive(struct rte_mbuf *m, struct module *peer, struct module *route)
 {
     uint8_t next_hop;
     int neigh_idx;
@@ -323,6 +322,8 @@ void route_receive(struct rte_mbuf *m,
     struct route_private *private = (struct route_private *)route->private;
     struct fastpath_pkt_metadata *c =
         (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
+
+    RTE_SET_USED(peer);
     
     if (c->protocol == ETHER_TYPE_IPv4) {
         ipv4_hdr = rte_pktmbuf_mtod(m, struct ipv4_hdr *);
@@ -547,6 +548,7 @@ int route_handle_msg(struct module *route,
         }
         break;
     default:
+        ret = -EINVAL;
         break;
     }
 
