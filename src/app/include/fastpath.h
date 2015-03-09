@@ -104,17 +104,11 @@
 #define NIP6_FMT "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x"
 #define NIP6_SEQFMT "%04x%04x%04x%04x%04x%04x%04x%04x"
 
-#if defined(__LITTLE_ENDIAN)
 #define HIPQUAD(addr) \
     ((unsigned char *)&addr)[3], \
     ((unsigned char *)&addr)[2], \
     ((unsigned char *)&addr)[1], \
     ((unsigned char *)&addr)[0]
-#elif defined(__BIG_ENDIAN)
-#define HIPQUAD     NIPQUAD
-#else
-#error "Please fix asm/byteorder.h"
-#endif /* __LITTLE_ENDIAN */
 
 enum {
     MODULE_TYPE_ETHERNET,

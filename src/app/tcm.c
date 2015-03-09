@@ -28,71 +28,71 @@ enum policer_action {
 
 enum policer_action policer_table[e_RTE_METER_COLORS][e_RTE_METER_COLORS] =
 {
-	{ GREEN, RED, RED},
-	{ DROP, YELLOW, RED},
-	{ DROP, DROP, RED}
+    { GREEN, RED, RED},
+    { DROP, YELLOW, RED},
+    { DROP, DROP, RED}
 };
 
 union ipv4_5tuple_host {
-	struct {
-		uint8_t  pad0;
-		uint8_t  proto;
-		uint16_t pad1;
-		uint32_t ip_src;
-		uint32_t ip_dst;
-		uint16_t port_src;
-		uint16_t port_dst;
-	};
-	__m128i xmm;
+    struct {
+        uint8_t  pad0;
+        uint8_t  proto;
+        uint16_t pad1;
+        uint32_t ip_src;
+        uint32_t ip_dst;
+        uint16_t port_src;
+        uint16_t port_dst;
+    };
+    __m128i xmm;
 };
 
 struct tcm_private {
     void *flows;
-    struct module *interface;
-    struct module *route;
+    struct module *lower;
+    struct module *upper;
 };
 
 static uint32_t tcm_mode;
 static __m128i mask0;
 
 struct rte_meter_srtcm_params app_srtcm_params[] = {
-	{.cir = 1000000 * 46,  .cbs = 2048, .ebs = 2048},
+    {.cir = 1000000 * 46,  .cbs = 2048, .ebs = 2048},
 };
 
 struct rte_meter_trtcm_params app_trtcm_params[] = {
-	{.cir = 1000000 * 46,  .pir = 1500000 * 46,  .cbs = 2048, .pbs = 2048},
+    {.cir = 1000000 * 46,  .pir = 1500000 * 46,  .cbs = 2048, .pbs = 2048},
 };
 
 static inline uint32_t
 ipv4_hash_crc(const void *data, __rte_unused uint32_t data_len,
-	uint32_t init_val)
+    uint32_t init_val)
 {
-	const union ipv4_5tuple_host *k;
-	uint32_t t;
-	const uint32_t *p;
+    const union ipv4_5tuple_host *k;
+    uint32_t t;
+    const uint32_t *p;
 
-	k = data;
-	t = k->proto;
-	p = (const uint32_t *)&k->port_src;
+    k = data;
+    t = k->proto;
+    p = (const uint32_t *)&k->port_src;
 
 #ifdef RTE_MACHINE_CPUFLAG_SSE4_2
-	init_val = rte_hash_crc_4byte(t, init_val);
-	init_val = rte_hash_crc_4byte(k->ip_src, init_val);
-	init_val = rte_hash_crc_4byte(k->ip_dst, init_val);
-	init_val = rte_hash_crc_4byte(*p, init_val);
+    init_val = rte_hash_crc_4byte(t, init_val);
+    init_val = rte_hash_crc_4byte(k->ip_src, init_val);
+    init_val = rte_hash_crc_4byte(k->ip_dst, init_val);
+    init_val = rte_hash_crc_4byte(*p, init_val);
 #else /* RTE_MACHINE_CPUFLAG_SSE4_2 */
-	init_val = rte_jhash_1word(t, init_val);
-	init_val = rte_jhash_1word(k->ip_src, init_val);
-	init_val = rte_jhash_1word(k->ip_dst, init_val);
-	init_val = rte_jhash_1word(*p, init_val);
+    init_val = rte_jhash_1word(t, init_val);
+    init_val = rte_jhash_1word(k->ip_src, init_val);
+    init_val = rte_jhash_1word(k->ip_dst, init_val);
+    init_val = rte_jhash_1word(*p, init_val);
 #endif /* RTE_MACHINE_CPUFLAG_SSE4_2 */
-	return (init_val);
+    return (init_val);
 }
 
 static void
 tcm_configure_flow_table(struct tcm_private *private)
 {
-	uint32_t i, j;
+    uint32_t i, j;
     struct rte_meter_srtcm *srtcm_flow;
     struct rte_meter_trtcm *trtcm_flow;
 
@@ -101,16 +101,16 @@ tcm_configure_flow_table(struct tcm_private *private)
     case TCM_MODE_SRTCM_COLOR_AWARE:
         srtcm_flow = (struct rte_meter_srtcm *)private->flows;
         for (i = 0, j = 0; i < TCM_FLOWS_MAX; i ++, j = (j + 1) % RTE_DIM(app_srtcm_params)){
-		    rte_meter_srtcm_config(&srtcm_flow[i], &app_srtcm_params[j]);
-	    }
+            rte_meter_srtcm_config(&srtcm_flow[i], &app_srtcm_params[j]);
+        }
         break;
 
     case TCM_MODE_TRTCM_COLOR_BLIND:
     case TCM_MODE_TRTCM_COLOR_AWARE:
         trtcm_flow = (struct rte_meter_trtcm *)private->flows;
         for (i = 0, j = 0; i < TCM_FLOWS_MAX; i ++, j = (j + 1) % RTE_DIM(app_trtcm_params)){
-    		rte_meter_trtcm_config(&trtcm_flow[i], &app_trtcm_params[j]);
-    	}
+            rte_meter_trtcm_config(&trtcm_flow[i], &app_trtcm_params[j]);
+        }
         break;
     
     default:
@@ -122,18 +122,18 @@ tcm_configure_flow_table(struct tcm_private *private)
 static inline void 
 tcm_set_pkt_color(uint8_t *pkt_data, enum policer_action color)
 {
-	pkt_data[TCM_PKT_COLOR_POS] = (uint8_t)color;
+    pkt_data[TCM_PKT_COLOR_POS] = (uint8_t)color;
 }
 
 static inline int
 tcm_pkt_handle(struct tcm_private *private, struct rte_mbuf *pkt, uint64_t time)
 {
-	uint8_t input_color, output_color;
+    uint8_t input_color, output_color;
     uint8_t flow_id;
-	uint8_t *pkt_data = rte_pktmbuf_mtod(pkt, uint8_t *);
-	uint32_t pkt_len = rte_pktmbuf_pkt_len(pkt);
-	input_color = pkt_data[TCM_PKT_COLOR_POS];
-	enum policer_action action;
+    uint8_t *pkt_data = rte_pktmbuf_mtod(pkt, uint8_t *);
+    uint32_t pkt_len = rte_pktmbuf_pkt_len(pkt);
+    input_color = pkt_data[TCM_PKT_COLOR_POS];
+    enum policer_action action;
     __m128i data;
     union ipv4_5tuple_host key;
     struct rte_meter_srtcm *srtcm_flow;
@@ -148,7 +148,7 @@ tcm_pkt_handle(struct tcm_private *private, struct rte_mbuf *pkt, uint64_t time)
     flow_id = ipv4_hash_crc(&data, sizeof(union ipv4_5tuple_host), 0);
     flow_id = flow_id & (TCM_FLOWS_MAX - 1);
 
-	/* color input is not used for blind modes */
+    /* color input is not used for blind modes */
     switch (tcm_mode) {
     case TCM_MODE_SRTCM_COLOR_BLIND:
         srtcm_flow = (struct rte_meter_srtcm *)private->flows;
@@ -159,7 +159,7 @@ tcm_pkt_handle(struct tcm_private *private, struct rte_mbuf *pkt, uint64_t time)
         srtcm_flow = (struct rte_meter_srtcm *)private->flows;
         output_color = (uint8_t) rte_meter_srtcm_color_aware_check(
             &srtcm_flow[flow_id], time, pkt_len,
-		    (enum rte_meter_color) input_color);
+            (enum rte_meter_color) input_color);
         break;
     case TCM_MODE_TRTCM_COLOR_BLIND:
         trtcm_flow = (struct rte_meter_trtcm *)private->flows;
@@ -178,11 +178,11 @@ tcm_pkt_handle(struct tcm_private *private, struct rte_mbuf *pkt, uint64_t time)
         break;
     }
 
-	/* Apply policing and set the output color */
-	action = policer_table[input_color][output_color];
-	tcm_set_pkt_color(pkt_data, action);
+    /* Apply policing and set the output color */
+    action = policer_table[input_color][output_color];
+    tcm_set_pkt_color(pkt_data, action);
 
-	return action;
+    return action;
 }
 
 void tcm_receive(struct rte_mbuf *m, struct module *peer, struct module *tcm)
@@ -195,7 +195,7 @@ void tcm_receive(struct rte_mbuf *m, struct module *peer, struct module *tcm)
     if (tcm_pkt_handle(private, m, current_time) == DROP) {
         rte_pktmbuf_free(m);
     } else {
-        SEND_PKT(m, tcm, private->route, PKT_DIR_RECV);
+        SEND_PKT(m, tcm, private->upper, PKT_DIR_RECV);
     }
 }
 
@@ -205,7 +205,7 @@ void tcm_xmit(struct rte_mbuf *m, struct module *peer, struct module *tcm)
 
     RTE_SET_USED(peer);
 
-    SEND_PKT(m, tcm, private->interface, PKT_DIR_XMIT);
+    SEND_PKT(m, tcm, private->lower, PKT_DIR_XMIT);
 }
 
 int tcm_handle_msg(struct module *tcm, 
@@ -244,11 +244,11 @@ int tcm_connect(struct module *local, struct module *peer, void *param)
     private = (struct tcm_private *)local->private;
 
     if (peer->type == MODULE_TYPE_INTERFACE || peer->type == MODULE_TYPE_ACL) {
-        private->interface = peer;
+        private->lower = peer;
         
         peer->connect(peer, local, NULL);
     } else if (peer->type == MODULE_TYPE_ROUTE) {
-        private->route = peer;
+        private->upper = peer;
     } else {
         fastpath_log_error("tcm_connect: invalid peer type %d\n", peer->type);
         return -ENOENT;
