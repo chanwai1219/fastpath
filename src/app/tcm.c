@@ -234,7 +234,7 @@ int tcm_connect(struct module *local, struct module *peer, void *param)
     RTE_SET_USED(param);
 
     if (local == NULL || peer == NULL) {
-        fastpath_log_error("interface_connect: invalid local %p peer %p\n", 
+        fastpath_log_error("tcm_connect: invalid local %p peer %p\n", 
             local, peer);
         return -EINVAL;
     }

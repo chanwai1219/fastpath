@@ -1,5 +1,5 @@
 
-#include "fastpath.h"
+#include "include/fastpath.h"
 
 #define uint32_t_to_char(ip, a, b, c, d) do {\
         *a = (unsigned char)(ip >> 24 & 0xff);\
@@ -207,9 +207,12 @@ struct acl_private {
     uint32_t ipv6_rules;
     struct rte_acl_ctx *acx;
     struct rte_acl_ctx *acx6;
-    struct module *interface;
-    struct module *route;
+    struct module *lower;
+    struct module *upper;
 };
+
+static uint32_t ipv4_priority;
+static uint32_t ipv6_priority;
 
 static inline void
 print_one_ipv4_rule(struct rte_acl_rule *rule, int extra)
@@ -311,7 +314,7 @@ static int acl_add_ipv4_rule(struct rte_acl_ctx *ctx, struct acl_rule *rule)
     acl_rule.field[PROTO_FIELD_IPV4].mask_range.u8 = 0xFF;
     
     acl_rule.data.category_mask = LEN2MASK(RTE_ACL_MAX_CATEGORIES);
-    acl_rule.data.priority = RTE_ACL_MAX_PRIORITY - ctx->num_rules;
+    acl_rule.data.priority = ipv4_priority--;
     acl_rule.data.userdata = rule->action;
 
     print_one_ipv4_rule(&acl_rule, 1);
@@ -362,7 +365,7 @@ static int acl_add_ipv6_rule(struct rte_acl_ctx *ctx, struct acl_rule6 *rule)
     acl_rule.field[PROTO_FIELD_IPV6].mask_range.u8 = 0xFF;
 
     acl_rule.data.category_mask = LEN2MASK(RTE_ACL_MAX_CATEGORIES);
-    acl_rule.data.priority = RTE_ACL_MAX_PRIORITY - ctx->num_rules;
+    acl_rule.data.priority = ipv6_priority--;
     acl_rule.data.userdata = rule->action;
 
     print_one_ipv6_rule(&acl_rule, 1);
@@ -383,7 +386,7 @@ void acl_receive(struct rte_mbuf *m, struct module *peer, struct module *acl)
     
     RTE_SET_USED(peer);
 
-    SEND_PKT(m, acl, private->route, PKT_DIR_RECV);
+    SEND_PKT(m, acl, private->upper, PKT_DIR_RECV);
 }
 
 void acl_xmit(struct rte_mbuf *m, struct module *peer, struct module *acl)
@@ -392,11 +395,13 @@ void acl_xmit(struct rte_mbuf *m, struct module *peer, struct module *acl)
 
     RTE_SET_USED(peer);
     
-    SEND_PKT(m, acl, private->interface, PKT_DIR_XMIT);
+    SEND_PKT(m, acl, private->lower, PKT_DIR_XMIT);
 }
 
 int acl_connect(struct module *local, struct module *peer, void *param)
 {
+    struct acl_private *private;
+
     RTE_SET_USED(param);
     
     if (local == NULL || peer == NULL) {
@@ -404,7 +409,22 @@ int acl_connect(struct module *local, struct module *peer, void *param)
             local, peer);
         return -EINVAL;
     }
-    
+
+    fastpath_log_info("acl_connect: local %s peer %s\n", local->name, peer->name);
+
+    private = (struct acl_private *)local->private;
+
+    if (peer->type == MODULE_TYPE_INTERFACE) {
+        private->lower = peer;
+        
+        peer->connect(peer, local, NULL);
+    } else if (peer->type == MODULE_TYPE_ROUTE || peer->type == MODULE_TYPE_TCM) {
+        private->upper = peer;
+    } else {
+        fastpath_log_error("acl_connect: invalid peer type %d\n", peer->type);
+        return -ENOENT;
+    }
+
     return 0;
 }
 
@@ -480,6 +500,9 @@ struct module* acl_init(uint16_t index)
         fastpath_log_error("acl_init: invalid index %d\n", index);
         return NULL;
     }
+
+    ipv4_priority = RTE_ACL_MAX_PRIORITY;
+    ipv6_priority = RTE_ACL_MAX_PRIORITY;
 
     memset(&cfg, 0, sizeof(struct rte_acl_config));
 

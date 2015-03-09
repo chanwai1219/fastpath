@@ -660,14 +660,16 @@ int route_connect(struct module *local, struct module *peer, void *param)
 
     private = (struct route_private *)local->private;
 
-    if (peer->type == MODULE_TYPE_INTERFACE) {
+    if (peer->type == MODULE_TYPE_INTERFACE 
+        || peer->type == MODULE_TYPE_ACL 
+        || peer->type == MODULE_TYPE_TCM) {
         uint16_t ifidx = *(uint16_t *)param;
         if (ifidx >= ROUTE_MAX_LINK) {
             fastpath_log_error("route_connect: invalid ifidx %d\n", ifidx);
             return -EINVAL;
         }
 
-        fastpath_log_info("route_connect: route add interface %d %s\n", ifidx, peer->name);
+        fastpath_log_info("route_connect: route add link %d %s\n", ifidx, peer->name);
         
         private->link[ifidx] = peer;
 

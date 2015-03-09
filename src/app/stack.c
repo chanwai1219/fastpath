@@ -21,6 +21,8 @@ struct module_entry *module_find(const char *name);
 static int execute_cmd(char *cmd)
 {
     int retry = 0;
+
+    fastpath_log_debug("execute_cmd: %s\n", cmd);
     
     while (retry < 3 && system(cmd) != 0) {
         retry++;
@@ -350,6 +352,44 @@ void fastpath_init_stack(void)
         init_port_map(ifidx, str);
     }
 
+    /* tcm */
+    nodeset = xml_get_nodeset(context, "//tcm-list/tcm");
+    if (nodeset != NULL) {
+        for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
+            uint32_t ifidx;
+            
+            node = nodeset->nodesetval->nodeTab[i];
+
+            str = xml_get_param(node, "interface", NULL);
+            snprintf(expr, sizeof(expr), "//interface-list/interface[name='%s']", str);
+            node = xml_get_node(context, expr, NULL);
+            str = xml_get_param(node, "name", NULL);
+            ifidx = strtoul(&str[3], NULL, 0);
+        
+            module = tcm_init(ifidx, 2);
+            module_add(module, ifidx, 0);
+        }
+    }
+
+    /* acl */
+    nodeset = xml_get_nodeset(context, "//acl-list/acl");
+    if (nodeset != NULL) {
+        for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
+            uint32_t ifidx;
+            
+            node = nodeset->nodesetval->nodeTab[i];
+
+            str = xml_get_param(node, "interface", NULL);
+            snprintf(expr, sizeof(expr), "//interface-list/interface[name='%s']", str);
+            node = xml_get_node(context, expr, NULL);
+            str = xml_get_param(node, "name", NULL);
+            ifidx = strtoul(&str[3], NULL, 0);
+        
+            module = acl_init(ifidx);
+            module_add(module, ifidx, 0);
+        }
+    }
+
     /* ip route */
     module = route_init();
     module_add(module, 0, 0);
@@ -357,8 +397,10 @@ void fastpath_init_stack(void)
     /* connect modules */
     nodeset = xml_get_nodeset(context, "//ip-forward/interface");
     if (nodeset != NULL) {
-        struct module *route;
-        struct module *eif;
+        const char *ifname;
+        struct module *route, *acl, *tcm, *eif;
+
+        
 
         entry = module_find("route");
         if (entry == NULL) {
@@ -370,14 +412,54 @@ void fastpath_init_stack(void)
         for (i = 0; i < nodeset->nodesetval->nodeNr; i++) {
             node = nodeset->nodesetval->nodeTab[i];
 
-            entry = module_find((const char *)node->children->content);
+            ifname = (const char *)node->children->content;
+
+            acl = tcm = NULL;
+
+            snprintf(expr, sizeof(expr), "//tcm-list/tcm[interface='%s']", ifname);
+            node = xml_get_node(context, expr, NULL);
+            if (node != NULL) {
+                str = xml_get_param(node, "name", NULL);
+                entry = module_find(str);
+                if (entry == NULL) {
+                    fastpath_log_error("tcm module %s not found\n", str);
+                }
+
+                tcm = entry->module;
+                route->connect(route, tcm, &entry->param1); 
+            }
+
+            snprintf(expr, sizeof(expr), "//acl-list/acl[interface='%s']", ifname);
+            node = xml_get_node(context, expr, NULL);
+            if (node != NULL) {
+                str = xml_get_param(node, "name", NULL);
+                entry = module_find(str);
+                if (entry == NULL) {
+                    fastpath_log_error("acl module %s not found\n", str);
+                }
+
+                acl = entry->module;
+                if (tcm) {
+                    tcm->connect(tcm, acl, &entry->param1);
+                } else {
+                    route->connect(route, acl, &entry->param1);
+                }
+            }
+
+            entry = module_find(ifname);
             if (entry == NULL) {
                 fastpath_log_error("interface module %s not found\n", 
                     node->children->content);
             }
             eif = entry->module;
 
-            route->connect(route, eif, &entry->param1); 
+            if (acl) {
+                acl->connect(acl, eif, &entry->param1);
+            } else if (tcm) {
+                tcm->connect(tcm, eif, &entry->param1);
+            } else {
+                route->connect(route, eif, &entry->param1); 
+            }
         }
     }
 
@@ -521,18 +603,17 @@ void fastpath_cleanup_stack(void)
         xmlNodePtr member;
         
         node = nodeset->nodesetval->nodeTab[i];
+        str = xml_get_param(node, "name", NULL);
 
         snprintf(expr, sizeof(expr), "ifconfig %s down", str);
         if (execute_cmd(expr) < 0) {
             goto err_out;
         }
-
-        str = xml_get_param(node, "name", NULL);
+        
         snprintf(expr, sizeof(expr), "brctl delbr %s", str);
         if (execute_cmd(expr) < 0) {
             goto err_out;
         }
-
 
         str = xml_get_param(node, "vlan", NULL);
         vid = strtoul(str, NULL, 0);

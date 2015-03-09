@@ -7,6 +7,12 @@
             <mode>trunk</mode>
             <native>1</native>
         </ethernet>
+        <ethernet>
+            <name>vEth1</name>
+            <state>up</state>
+            <mode>trunk</mode>
+            <native>1</native>
+        </ethernet>
     </port-list>
     <bridge-list>
     	<bridge>
@@ -14,6 +20,7 @@
     		<interface>eif0</interface>
 	    	<vlan>1</vlan>
 	    	<port>vEth0</port>
+	    	<port>vEth1</port>
     	</bridge>
     	<bridge>
     		<name>br2</name>
@@ -32,11 +39,7 @@
             <address>192.168.102.1/24</address>
         </interface>
     </interface-list>
-    <ip-forward>
-        <interface>eif0</interface>
-        <interface>eif1</interface>
-    </ip-forward>
-    <access-list>
+    <acl-list>
     	<acl>
     		<name>acl0</name>
     		<interface>eif0</interface>
@@ -45,5 +48,15 @@
     		<ipv6>
     		</ipv6>
     	</acl>
-    </access-list>
+    </acl-list>
+    <tcm-list>
+    	<tcm>
+    		<name>tcm0</name>
+    		<interface>eif0</interface>
+    	</tcm>
+    </tcm-list>
+    <ip-forward>
+        <interface>eif0</interface>
+        <interface>eif1</interface>
+    </ip-forward>
 </config>

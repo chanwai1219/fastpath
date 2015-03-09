@@ -245,7 +245,9 @@ int interface_connect(struct module *local, struct module *peer, void *param)
         private->lower = peer;
         
         peer->connect(peer, local, NULL);
-    } else if (peer->type == MODULE_TYPE_ROUTE) {
+    } else if (peer->type == MODULE_TYPE_ROUTE ||
+        peer->type == MODULE_TYPE_TCM ||
+        peer->type == MODULE_TYPE_ACL) {
         private->ipv4 = peer;
         private->ipv6 = peer;
     } else {
