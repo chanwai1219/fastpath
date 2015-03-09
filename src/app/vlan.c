@@ -1,6 +1,5 @@
 
-#include "fastpath.h"
-#include "vlan.h"
+#include "include/fastpath.h"
 
 struct vlan_private {
     uint16_t vid;

@@ -56,6 +56,7 @@
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
 #include <rte_hash.h>
+#include <rte_hash_crc.h>
 #include <rte_ip_frag.h>
 #include <rte_ip.h>
 #include <rte_tcp.h>
@@ -63,7 +64,9 @@
 #include <rte_lpm6.h>
 #include <rte_string_fns.h>
 #include <rte_spinlock.h>
+#include <rte_rwlock.h>
 #include <rte_kni.h>
+#include <rte_meter.h>
 
 #include "libxml/list.h"
 #include "libxml/parser.h"
@@ -118,6 +121,8 @@ enum {
     MODULE_TYPE_VLAN,
     MODULE_TYPE_BRIDGE,
     MODULE_TYPE_INTERFACE,
+    MODULE_TYPE_ACL,
+    MODULE_TYPE_TCM,
     MODULE_TYPE_ROUTE,
 };
 
@@ -216,6 +221,7 @@ struct fastpath_pkt_metadata {
 #include "vlan.h"
 #include "bridge.h"
 #include "interface.h"
+#include "tcm.h"
 #include "route.h"
 
 #endif /* __FASTPATH_H__ */
