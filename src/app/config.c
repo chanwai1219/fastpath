@@ -31,7 +31,7 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "fastpath.h"
+#include "include/fastpath.h"
 
 struct fastpath_params fastpath;
 

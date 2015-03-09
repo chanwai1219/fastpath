@@ -1,5 +1,5 @@
 
-#include "fastpath.h"
+#include "include/fastpath.h"
 
 #define BRIDGE_HASH_ENTRIES     (64 * 1024)
 
@@ -18,7 +18,7 @@ struct bridge_fdb_entry {
 struct bridge_private {
     uint16_t vid;
     uint16_t port_num;
-    struct module *interface;
+    struct module *upper;
     struct module *port[BRIDGE_MAX_PORTS];
     rte_spinlock_t lock[FASTPATH_MAX_SOCKETS];
     struct rte_hash *bridge_hash_tbl[FASTPATH_MAX_SOCKETS];
@@ -121,7 +121,7 @@ static void bridge_flood(struct rte_mbuf *m, struct module *br, uint8_t input)
     }
 
     if (pkt_num == 1 && input != BRIDGE_MAX_PORTS) {
-        SEND_PKT(m, br, private->interface, PKT_DIR_RECV);
+        SEND_PKT(m, br, private->upper, PKT_DIR_RECV);
     } else {
         fastpath_log_error("bridge_flood: error occured pkt num %d input %d", pkt_num, input);
         rte_pktmbuf_free(m);
@@ -170,7 +170,7 @@ void bridge_receive(struct rte_mbuf *m,
         bridge_flood(m, br, port);
     } else {
         if (entry->flag & BRIDGE_FDB_FLAG_LOCAL) {
-            SEND_PKT(m, br, private->interface, PKT_DIR_RECV);
+            SEND_PKT(m, br, private->upper, PKT_DIR_RECV);
         } else {
             if (entry->port == port) {
                 fastpath_log_debug("source destination port are same, drop packet\n", br->name);
@@ -343,7 +343,7 @@ int bridge_connect(struct module *local, struct module *peer, void *param)
     private = local->private;
 
     if (peer->type == MODULE_TYPE_INTERFACE) {
-        private->interface = peer;
+        private->upper = peer;
     } else if (peer->type == MODULE_TYPE_VLAN || peer->type == MODULE_TYPE_ETHERNET) {
         uint16_t port = *(uint16_t *)param;
         if (port >= BRIDGE_MAX_PORTS) {

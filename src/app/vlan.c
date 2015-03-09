@@ -1,12 +1,11 @@
 
-#include "fastpath.h"
-#include "vlan.h"
+#include "include/fastpath.h"
 
 struct vlan_private {
     uint16_t vid;
     uint16_t reserved;
-    struct module *ethernet;
-    struct module *bridge;
+    struct module *lower;
+    struct module *upper;
 };
 
 struct module *vlan_modules[VLAN_VID_MAX];
@@ -26,7 +25,7 @@ void vlan_receive(struct rte_mbuf *m, struct module *peer, struct module *vlan)
         2 * sizeof(struct ether_addr));
 #endif
 
-    SEND_PKT(m, vlan, private->bridge, PKT_DIR_RECV);
+    SEND_PKT(m, vlan, private->upper, PKT_DIR_RECV);
     
     return;
 }
@@ -50,7 +49,7 @@ void vlan_xmit(struct rte_mbuf *m, struct module *peer, struct module *vlan)
     vlan_hdr = (struct vlan_hdr *)(eth_hdr + 1);
     vlan_hdr->vlan_tci = rte_cpu_to_be_16(private->vid);
     
-    SEND_PKT(m, vlan, private->ethernet, PKT_DIR_XMIT);
+    SEND_PKT(m, vlan, private->lower, PKT_DIR_XMIT);
     
     return;
 }
@@ -71,10 +70,10 @@ int vlan_connect(struct module *local, struct module *peer, void *param)
     private = (struct vlan_private *)local->private;
 
     if (peer->type == MODULE_TYPE_BRIDGE) {
-        private->bridge = peer;
+        private->upper = peer;
     } else if (peer->type == MODULE_TYPE_ETHERNET) {
         uint16_t vid = *(uint16_t *)param;
-        private->ethernet = peer;
+        private->lower = peer;
 
         peer->connect(peer, local, &vid);
     } else {

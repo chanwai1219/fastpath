@@ -1,5 +1,5 @@
 
-#include "fastpath.h"
+#include "include/fastpath.h"
 
 struct arp_entry {
     uint16_t type;
@@ -38,8 +38,7 @@ struct nh6_table {
 } __rte_cache_aligned;
 
 struct route_private {
-    struct module *ipv4[ROUTE_MAX_LINK];
-    struct module *ipv6[ROUTE_MAX_LINK];
+    struct module *link[ROUTE_MAX_LINK];
     struct rte_lpm *lpm_tbl;
     struct rte_lpm6 *lpm6_tbl;
     struct nh_table *nh_tbl;
@@ -187,9 +186,12 @@ int nh_add(struct module *route, struct lpm_key *key, struct nh_entry *nh)
             return -1;
         }
 
-        memcpy(&private->nh_tbl[nht_pos], nh, sizeof(struct nh_entry));
+        memcpy(&private->nh_tbl->nht[nht_pos], nh, sizeof(struct nh_entry));
     }
 
+    fastpath_log_debug("nh_add: ip "NIPQUAD_FMT" depth %d nh "NIPQUAD_FMT"@%d pos %d\n",
+        HIPQUAD(key->ip), key->depth, HIPQUAD(nh->nh_ip), nh->nh_iface, nht_pos);
+    
     /* Add rule to low level LPM table */
     if (rte_lpm_add(private->lpm_tbl, key->ip, key->depth, (uint8_t)nht_pos) < 0) {
         fastpath_log_error("nh_add: LPM rule add failed\n");
@@ -338,9 +340,9 @@ void route_receive(struct rte_mbuf *m, struct module *peer, struct module *route
         } else {
             nh = private->default_nh;
         }
-        if (nh == NULL || nh->nh_ip == 0) {
-            fastpath_log_debug("lpm entry for "NIPQUAD_FMT" not found, drop packet\n",
-                NIPQUAD(ipv4_hdr->dst_addr));
+        if (nh->nh_ip == 0) {
+            fastpath_log_debug("lpm entry for "NIPQUAD_FMT" not found, drop packet nh %p\n",
+                NIPQUAD(ipv4_hdr->dst_addr), nh);
             rte_pktmbuf_free(m);
             return;
         }
@@ -356,13 +358,13 @@ void route_receive(struct rte_mbuf *m, struct module *peer, struct module *route
         neigh = &private->neigh_tbl[neigh_idx];
 
         fastpath_log_debug("route found "NIPQUAD_FMT" next hop "NIPQUAD_FMT"@%d type %d\n",
-            NIPQUAD(ipv4_hdr->dst_addr), NIPQUAD(nh->nh_ip), nh->nh_iface, neigh->type);
+            NIPQUAD(ipv4_hdr->dst_addr), HIPQUAD(nh->nh_ip), nh->nh_iface, neigh->type);
         
         switch (neigh->type) {
         case NEIGH_TYPE_LOCAL:
-            fastpath_log_debug("route receive proto %d packet, will be supported later\n",
-                ipv4_hdr->next_proto_id);
-            rte_pktmbuf_free(m);
+            fastpath_log_debug("local pkt, send to kni\n");
+            rte_pktmbuf_prepend(m, c->network_header - c->mac_header);
+            kni_ingress(m);
             break;
 
         case NEIGH_TYPE_REACHABLE:
@@ -370,7 +372,7 @@ void route_receive(struct rte_mbuf *m, struct module *peer, struct module *route
             eth_hdr = (struct ether_hdr *)c->mac_header;
             rte_memcpy(&eth_hdr->d_addr, &neigh->nh_arp, sizeof(struct ether_hdr));
             eth_hdr->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
-            SEND_PKT(m, route, private->ipv4[nh->nh_iface], PKT_DIR_XMIT);
+            SEND_PKT(m, route, private->link[nh->nh_iface], PKT_DIR_XMIT);
             break;
 
         default:
@@ -413,7 +415,7 @@ void route_receive(struct rte_mbuf *m, struct module *peer, struct module *route
         case NEIGH_TYPE_REACHABLE:
             c->mac_header = rte_pktmbuf_mtod(m, uint8_t *) - sizeof(struct ether_hdr);
             rte_memcpy(c->mac_header, &neigh->nh_arp, sizeof(struct ether_hdr));
-            SEND_PKT(m, route, private->ipv6[nh6->nh_iface], PKT_DIR_XMIT);
+            SEND_PKT(m, route, private->link[nh6->nh_iface], PKT_DIR_XMIT);
             break;
 
         default:
@@ -491,11 +493,11 @@ int route_handle_msg(struct module *route,
             };
             struct nh_entry entry = {
                 .nh_ip = rte_be_to_cpu_32(rt->nh_ip),
-                .nh_iface = rte_be_to_cpu_32(rt->nh_iface),
+                .nh_iface = rt->nh_iface,
             };
 
             fastpath_log_debug("add nh ip "NIPQUAD_FMT" depth %d next hop "NIPQUAD_FMT" interface %d\n",
-                NIPQUAD(rt->ip), rt->depth, NIPQUAD(rt->nh_ip), rte_be_to_cpu_32(rt->nh_iface));
+                NIPQUAD(rt->ip), rt->depth, NIPQUAD(rt->nh_ip), rt->nh_iface);
             
             ret = nh_add(route, &key, &entry);
             if (ret != 0) {
@@ -667,7 +669,7 @@ int route_connect(struct module *local, struct module *peer, void *param)
 
         fastpath_log_info("route_connect: route add interface %d %s\n", ifidx, peer->name);
         
-        private->ipv4[ifidx] = peer;
+        private->link[ifidx] = peer;
 
         peer->connect(peer, local, NULL);
     } else {

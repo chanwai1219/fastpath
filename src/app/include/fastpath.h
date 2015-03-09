@@ -58,6 +58,7 @@
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
 #include <rte_hash.h>
+#include <rte_hash_crc.h>
 #include <rte_ip_frag.h>
 #include <rte_ip.h>
 #include <rte_tcp.h>
@@ -65,8 +66,10 @@
 #include <rte_lpm6.h>
 #include <rte_string_fns.h>
 #include <rte_spinlock.h>
+#include <rte_rwlock.h>
 #include <rte_kni.h>
 #include <rte_acl.h>
+#include <rte_meter.h>
 
 #include "libxml/list.h"
 #include "libxml/parser.h"
@@ -104,17 +107,11 @@
 #define NIP6_FMT "%04x:%04x:%04x:%04x:%04x:%04x:%04x:%04x"
 #define NIP6_SEQFMT "%04x%04x%04x%04x%04x%04x%04x%04x"
 
-#if defined(__LITTLE_ENDIAN)
 #define HIPQUAD(addr) \
     ((unsigned char *)&addr)[3], \
     ((unsigned char *)&addr)[2], \
     ((unsigned char *)&addr)[1], \
     ((unsigned char *)&addr)[0]
-#elif defined(__BIG_ENDIAN)
-#define HIPQUAD     NIPQUAD
-#else
-#error "Please fix asm/byteorder.h"
-#endif /* __LITTLE_ENDIAN */
 
 enum {
     MODULE_TYPE_ETHERNET,
@@ -122,6 +119,7 @@ enum {
     MODULE_TYPE_BRIDGE,
     MODULE_TYPE_INTERFACE,
     MODULE_TYPE_ACL,
+    MODULE_TYPE_TCM,
     MODULE_TYPE_ROUTE,
 };
 
@@ -221,6 +219,7 @@ struct fastpath_pkt_metadata {
 #include "bridge.h"
 #include "interface.h"
 #include "acl.h"
+#include "tcm.h"
 #include "route.h"
 
 #endif /* __FASTPATH_H__ */

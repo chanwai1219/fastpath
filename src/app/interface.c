@@ -1,5 +1,5 @@
 
-#include "fastpath.h"
+#include "include/fastpath.h"
 
 #define INTERFACE_INDEX_MAX     VLAN_VID_MAX
 
@@ -12,7 +12,7 @@ struct interface_private {
     uint8_t reserved;
     struct module *ipv4;
     struct module *ipv6;
-    struct module *bridge;
+    struct module *lower;
 };
 
 struct module *interface_modules[INTERFACE_INDEX_MAX];
@@ -169,12 +169,14 @@ void interface_xmit(struct rte_mbuf *m, struct module *peer, struct module *ifac
         return;
     }
 
+    m->port = private->ifindex;
+
     if (c->protocol == ETHER_TYPE_IPv4) {
         fastpath_log_debug("interface %s receive ipv4 packet\n", iface->name);
         
         /* if we don't need to do any fragmentation */
         if (likely (IPV4_MTU_DEFAULT >= m->pkt_len)) {
-            SEND_PKT(m, iface, private->bridge, PKT_DIR_XMIT);
+            SEND_PKT(m, iface, private->lower, PKT_DIR_XMIT);
         } else {
             n_frags = rte_ipv4_fragment_packet(m,
                 &pkts_out[0],
@@ -190,7 +192,7 @@ void interface_xmit(struct rte_mbuf *m, struct module *peer, struct module *ifac
                 return;
 
             for (i = 0; i < n_frags; i++) {
-                SEND_PKT(pkts_out[i], iface, private->bridge, PKT_DIR_XMIT);
+                SEND_PKT(pkts_out[i], iface, private->lower, PKT_DIR_XMIT);
             }
         }
     } else if (c->protocol == ETHER_TYPE_IPv6) {
@@ -198,7 +200,7 @@ void interface_xmit(struct rte_mbuf *m, struct module *peer, struct module *ifac
         
         /* if we don't need to do any fragmentation */
         if (likely (IPV6_MTU_DEFAULT >= m->pkt_len)) {
-            SEND_PKT(m, iface, private->bridge, PKT_DIR_XMIT);
+            SEND_PKT(m, iface, private->lower, PKT_DIR_XMIT);
         } else {
             n_frags = rte_ipv6_fragment_packet(m,
                 &pkts_out[0],
@@ -214,7 +216,7 @@ void interface_xmit(struct rte_mbuf *m, struct module *peer, struct module *ifac
                 return;
 
             for (i = 0; i < n_frags; i++) {
-                SEND_PKT(pkts_out[i], iface, private->bridge, PKT_DIR_XMIT);
+                SEND_PKT(pkts_out[i], iface, private->lower, PKT_DIR_XMIT);
             }
         }
     } else {
@@ -240,7 +242,7 @@ int interface_connect(struct module *local, struct module *peer, void *param)
     private = (struct interface_private *)local->private;
 
     if (peer->type == MODULE_TYPE_BRIDGE) {
-        private->bridge = peer;
+        private->lower = peer;
         
         peer->connect(peer, local, NULL);
     } else if (peer->type == MODULE_TYPE_ROUTE) {

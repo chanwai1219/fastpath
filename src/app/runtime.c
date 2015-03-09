@@ -31,7 +31,7 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "fastpath.h"
+#include "include/fastpath.h"
 
 #ifndef FASTPATH_RX_FLUSH
 #define FASTPATH_RX_FLUSH                   1000000

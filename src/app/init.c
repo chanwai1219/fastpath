@@ -31,7 +31,7 @@
  *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "fastpath.h"
+#include "include/fastpath.h"
 
 /* Max size of a single packet */
 #define MAX_PACKET_SZ           2048

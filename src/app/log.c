@@ -65,17 +65,7 @@
  */
 /* Created 2010 by Keith Wiles @ windriver.com */
 
-#include "log.h"
-
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <time.h>
-#include <sys/time.h>
-#include <stdarg.h>
-#include <libgen.h>
-
-#include <rte_rwlock.h>
+#include "include/fastpath.h"
 
 /* Log sizes and data structure */
 #define LOG_HISTORY         64          /* log "scrollback buffer" size */
