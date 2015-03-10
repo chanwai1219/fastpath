@@ -38,6 +38,7 @@ struct nh6_table {
 } __rte_cache_aligned;
 
 struct route_private {
+    struct ether_addr eth_addr[ROUTE_MAX_LINK];
     struct module *link[ROUTE_MAX_LINK];
     struct rte_lpm *lpm_tbl;
     struct rte_lpm6 *lpm6_tbl;
@@ -362,7 +363,7 @@ void route_receive(struct rte_mbuf *m, struct module *peer, struct module *route
         
         switch (neigh->type) {
         case NEIGH_TYPE_LOCAL:
-            fastpath_log_debug("local pkt, send to kni\n");
+            fastpath_log_debug("local pkt, send to kni %d\n", m->port);
             rte_pktmbuf_prepend(m, c->network_header - c->mac_header);
             kni_ingress(m);
             break;
@@ -370,6 +371,7 @@ void route_receive(struct rte_mbuf *m, struct module *peer, struct module *route
         case NEIGH_TYPE_REACHABLE:
             c->mac_header = rte_pktmbuf_mtod(m, uint8_t *) - sizeof(struct ether_hdr);
             eth_hdr = (struct ether_hdr *)c->mac_header;
+            rte_memcpy(&eth_hdr->s_addr, &private->eth_addr[nh->nh_iface], sizeof(struct ether_addr));
             rte_memcpy(&eth_hdr->d_addr, &neigh->nh_arp, sizeof(struct ether_hdr));
             eth_hdr->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
             SEND_PKT(m, route, private->link[nh->nh_iface], PKT_DIR_XMIT);
@@ -439,6 +441,8 @@ int route_handle_msg(struct module *route,
     struct msg_hdr *req, struct msg_hdr *resp)
 {
     int ret;
+    struct route_private *private = (struct route_private *)route->private;
+    
     resp->cmd = req->cmd;
 
     fastpath_log_debug("route_handle_msg: cmd %d\n", req->cmd);
@@ -464,6 +468,10 @@ int route_handle_msg(struct module *route,
             if (ret != 0) {
                 fastpath_log_error("neigh_add failed\n");
                 resp->flag = FASTPATH_MSG_FAILED;
+            }
+
+            if (neigh.type == NEIGH_TYPE_LOCAL) {
+                rte_memcpy(&private->eth_addr[nh.nh_iface], &neigh.nh_arp, sizeof(struct ether_addr));
             }
         }
         break;
@@ -493,11 +501,11 @@ int route_handle_msg(struct module *route,
             };
             struct nh_entry entry = {
                 .nh_ip = rte_be_to_cpu_32(rt->nh_ip),
-                .nh_iface = rt->nh_iface,
+                .nh_iface = rte_be_to_cpu_32(rt->nh_iface),
             };
 
             fastpath_log_debug("add nh ip "NIPQUAD_FMT" depth %d next hop "NIPQUAD_FMT" interface %d\n",
-                NIPQUAD(rt->ip), rt->depth, NIPQUAD(rt->nh_ip), rt->nh_iface);
+                HIPQUAD(key.ip), key.depth, HIPQUAD(entry.nh_ip), entry.nh_iface);
             
             ret = nh_add(route, &key, &entry);
             if (ret != 0) {

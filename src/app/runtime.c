@@ -38,7 +38,7 @@
 #endif
 
 #ifndef FASTPATH_WORKER_FLUSH
-#define FASTPATH_WORKER_FLUSH               1000000
+#define FASTPATH_WORKER_FLUSH               10000
 #endif
 
 #ifndef FASTPATH_STATS

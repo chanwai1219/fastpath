@@ -207,7 +207,7 @@ void bridge_xmit(struct rte_mbuf *m, struct module *peer, struct module *br)
         }
 
         rte_pktmbuf_prepend(m, (uint16_t)sizeof(struct ether_hdr));
-        SEND_PKT(m, br, private->port[entry->port], PKT_DIR_RECV);
+        SEND_PKT(m, br, private->port[entry->port], PKT_DIR_XMIT);
     }
 }
 

@@ -87,7 +87,7 @@ void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *i
         }
 
         if (IS_IPV4_MCAST(rte_be_to_cpu_32(ipv4_hdr->dst_addr))) {
-            fastpath_log_debug("multicast pkt, send to kni\n");
+            fastpath_log_debug("multicast pkt, send to kni %d\n", m->port);
             rte_pktmbuf_prepend(m, c->network_header - c->mac_header);
             kni_ingress(m);
             return;
@@ -145,10 +145,10 @@ void interface_receive(struct rte_mbuf *m, struct module *peer, struct module *i
 
         SEND_PKT(m, iface, private->ipv6, PKT_DIR_RECV);
     } else {
-        /* TODO: send to kernel */
-        fastpath_log_debug("interface receive protocol %02x packet, not supported for now\n",
-            c->protocol);
-        rte_pktmbuf_free(m);
+        fastpath_log_debug("interface receive protocol %04x packet, send to kni %d\n",
+            c->protocol, m->port);
+        rte_pktmbuf_prepend(m, c->network_header - c->mac_header);
+        kni_ingress(m);
     }
 }
 

@@ -47,9 +47,12 @@ static int neigh_update(struct nlmsghdr *nlh)
     struct ndmsg *ndm;
     struct rtattr *rta;
     struct rtattr *tb[NDA_MAX+1];
+    struct nda_cacheinfo *ci = NULL;
     struct msg_hdr *hdr;
     struct arp_add *arp_add;
     struct arp_del *arp_del;
+    struct route_add *rt_add;
+    struct route_del *rt_del;
 
     len -= NLMSG_LENGTH(sizeof(*ndm));
     if (len < 0)
@@ -79,13 +82,6 @@ static int neigh_update(struct nlmsghdr *nlh)
         return -EIO;
     }
 
-#if 0
-    if (!(ndm->ndm_state & (NUD_REACHABLE | NUD_PERMANENT))) {
-        fastpath_log_debug( "ignore neigh state %08x.\n", ndm->ndm_state);
-        return 0;
-    }
-#endif
-
     rta = (struct rtattr*)((char*)ndm + NLMSG_ALIGN(sizeof(struct ndmsg)));
     
     rtattr_parse(tb, NDA_MAX, rta, len);
@@ -94,18 +90,34 @@ static int neigh_update(struct nlmsghdr *nlh)
         fastpath_log_error( "nda dst is null.\n");
         return -EINVAL;
     }
+    
+    if (NULL != tb[NDA_CACHEINFO]) {
+        ci = RTA_DATA(tb[NDA_CACHEINFO]);
+    }
 
     fastpath_log_debug( "%s: neigh update, family %d, ifidx %d, eif%d, state 0x%02x\n",
         __func__, ndm->ndm_family, ndm->ndm_ifindex, index, ndm->ndm_state);
 
-    if (ndm->ndm_state & NUD_FAILED) {
+    if (ndm->ndm_state & NUD_FAILED || (ci && (ci->ndm_refcnt == 0))) {
         hdr->cmd = ROUTE_MSG_DEL_NEIGH;
         arp_del = (struct arp_del *)hdr->data;
         arp_del->nh_iface = rte_cpu_to_be_32(index);
         memcpy(&arp_del->nh_ip, RTA_DATA(tb[NDA_DST]), RTA_PAYLOAD(tb[NDA_DST]));
+        err = route_send(hdr);
+        if (err != 0) {
+            fastpath_log_error( "neigh_update: send neigh failed\n", __func__);
+        }
 
-        fastpath_log_debug("del neigh, ip "NIPQUAD_FMT"\n", NIPQUAD(*(uint32_t *)RTA_DATA(tb[NDA_DST])));
-    } else if (ndm->ndm_state & (NUD_REACHABLE | NUD_PERMANENT)) {
+        hdr->cmd = ROUTE_MSG_DEL_NH;
+        rt_del = (struct route_del *)hdr->data;
+        memcpy(&rt_del->ip, RTA_DATA(tb[NDA_DST]), RTA_PAYLOAD(tb[NDA_DST]));
+        rt_del->depth = 32;
+        err = route_send(hdr);
+        if (err != 0) {
+            fastpath_log_error( "neigh_update: send nh failed\n");
+        }
+        
+    } else /* if (ndm->ndm_state & (NUD_REACHABLE | NUD_PERMANENT)) */ {
         hdr->cmd = ROUTE_MSG_ADD_NEIGH;
         arp_add = (struct arp_add *)hdr->data;
         arp_add->nh_iface = rte_cpu_to_be_32(index);
@@ -114,18 +126,28 @@ static int neigh_update(struct nlmsghdr *nlh)
         if (NULL != tb[NDA_LLADDR]) {
             memcpy(&arp_add->nh_arp, (char*)RTA_DATA(tb[NDA_LLADDR]), RTA_PAYLOAD(tb[NDA_LLADDR]));
         }
+        err = route_send(hdr);
+        if (err != 0) {
+            fastpath_log_error( "neigh_update: send neigh failed\n", __func__);
+        }
 
-        fastpath_log_debug("add neigh, ip "NIPQUAD_FMT", lladdr "MAC_FMT"\n",
-            NIPQUAD(*(uint32_t *)RTA_DATA(tb[NDA_DST])), MAC_ARG(RTA_DATA(tb[NDA_LLADDR])));
-    } else {
+        hdr->cmd = ROUTE_MSG_ADD_NH;
+        rt_add = (struct route_add *)hdr->data;
+        memcpy(&rt_add->ip, RTA_DATA(tb[NDA_DST]), RTA_PAYLOAD(tb[NDA_DST]));
+        rt_add->depth = 32;
+        memcpy(&rt_add->nh_ip, RTA_DATA(tb[NDA_DST]), RTA_PAYLOAD(tb[NDA_DST]));
+        rt_add->nh_iface = rte_cpu_to_be_32(index);
+        err = route_send(hdr);
+        if (err != 0) {
+            fastpath_log_error( "neigh_update: send nh failed\n");
+        }
+    }
+#if 0
+    else {
         fastpath_log_debug("ignored ndm state 0x%02x\n", ndm->ndm_state);
         return 0;
     }    
-    
-    err = route_send(hdr);
-    if (err != 0) {
-        fastpath_log_error( "%s: send neigh failed\n", __func__);
-    }
+#endif
 
     return 0;
 }

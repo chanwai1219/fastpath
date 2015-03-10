@@ -12,11 +12,17 @@ struct module *vlan_modules[VLAN_VID_MAX];
 
 void vlan_receive(struct rte_mbuf *m, struct module *peer, struct module *vlan)
 {
+    struct vlan_hdr  *vlan_hdr;
     struct vlan_private *private = (struct vlan_private *)vlan->private;
+    struct fastpath_pkt_metadata *c =
+        (struct fastpath_pkt_metadata *)RTE_MBUF_METADATA_UINT8_PTR(m, 0);
 
     RTE_SET_USED(peer);
 
     fastpath_log_debug("vlan %s receive packet\n", vlan->name);
+
+    vlan_hdr = rte_pktmbuf_mtod(m, struct vlan_hdr *);
+    c->protocol = rte_be_to_cpu_16(vlan_hdr->eth_proto);
 
     rte_pktmbuf_adj(m, (uint16_t)sizeof(struct vlan_hdr));
 #if 0
